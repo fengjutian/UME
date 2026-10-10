@@ -1,0 +1,12 @@
+{
+  "id": "ume",
+  "version": "0.3.3",
+  "homepage": "https://docs.ume.ai/integrations/kimi",
+  "native": {
+    "pluginRoot": "${KIMI_PLUGIN_ROOT}",
+    "files": {
+      "kimi.plugin.json": "kimi.plugin.json",
+      "hooks/adapter.py": "hooks/adapter.py"
+    }
+  }
+}

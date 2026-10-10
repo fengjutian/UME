@@ -1,0 +1,13 @@
+{
+  "name": "ume",
+  "version": "0.3.3",
+  "description": "Cross-session memory and token savings for coding agents.",
+  "author": { "name": "UME", "email": "support@ume.ai" },
+  "homepage": "https://docs.ume.ai/integrations/codex",
+  "repository": "https://github.com/fengjutian/UME",
+  "license": "Apache-2.0",
+  "keywords": ["memory", "coding-agents", "continual-learning", "token-efficiency"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}

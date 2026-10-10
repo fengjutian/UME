@@ -1,0 +1,69 @@
+---
+title: Strands Agents
+description: "Add persistent long-term memory to AWS Strands agents with UME, as a native MemoryStore that plugs into the agent loop."
+---
+
+Integrate [**UME**](https://github.com/fengjutian/UME) with [Strands Agents](https://github.com/strands-agents/sdk-python), AWS's open-source SDK for building AI agents. The [`ume-strands`](https://github.com/fengjutian/UME/tree/main/integrations/ume-strands) package ships a native `MemoryStore`, so recall and writes happen automatically inside the agent loop, not as tool calls the model has to remember.
+
+## Overview
+
+1. A `MemoryStore` the `MemoryManager` drives on every turn: it searches UME and injects the results into the prompt, and writes memory back when extraction is enabled.
+2. Server-side extraction: because the store implements `add_messages`, enabling `extraction` routes raw conversation turns to UME's own extraction pipeline, with no extra client-side model call.
+3. Works with the hosted UME Platform (an API key) or self-hosted UME OSS (a config dict).
+
+## Prerequisites
+
+Before setting up UME with Strands, ensure you have:
+
+1. Installed the required packages:
+```bash
+pip install ume-strands
+```
+
+2. A valid API key:
+   - <a href="https://app.ume.ai/dashboard/api-keys?utm_source=oss&utm_medium=integration-strands">UME API Key</a> (set as `UME_API_KEY`)
+
+## Basic Integration Example
+
+Hand a `UMEMemoryStore` to a `MemoryManager`, and the agent gets automatic recall and memory writes:
+
+```python
+import os
+from strands import Agent
+from strands.memory import MemoryManager
+from ume_strands import UMEMemoryStore
+
+os.environ["UME_API_KEY"] = "your-ume-api-key"
+
+# extraction=True routes conversation turns to UME's server-side extraction.
+store = UMEMemoryStore(user_id="alex", extraction=True)
+agent = Agent(memory_manager=MemoryManager(stores=[store]))
+
+agent("Remember I use Neovim and deploy on Fridays.")  # writes memory
+print(agent("What editor do I use?"))                   # recalls it, injected automatically
+```
+
+Scope memories with any of `user_id`, `agent_id`, `run_id`, or `app_id` (`app_id` is platform-only). Pass `max_search_results` to bound how many memories are injected per turn.
+
+## Self-hosted UME (OSS)
+
+To run against self-hosted UME instead of the platform, pass a `config` dict:
+
+```python
+store = UMEMemoryStore(
+    user_id="alex",
+    extraction=True,
+    config={
+        "vector_store": {"provider": "qdrant", "config": {"host": "localhost", "port": 6333}},
+    },
+)
+```
+
+## Explicit memory tool
+
+If you want the model to call memory explicitly instead of (or alongside) the automatic store, use the `ume_memory` tool from `strands-agents-tools`. A store and the tool can share the same UME backend and namespace.
+
+## Learn more
+
+- [ume-strands on GitHub](https://github.com/fengjutian/UME/tree/main/integrations/ume-strands)
+- [Strands Agents documentation](https://strandsagents.com)

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "ume": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["./core/mcp_server.py"],
+      "cwd": ".",
+      "env_vars": [
+        "UME_API_KEY",
+        "UME_API_URL",
+        "UME_CODE_USER_ID",
+        "UME_USER_ID",
+        "UME_RESOLVED_USER_ID",
+        "UME_PROJECT_ID",
+        "UME_TELEMETRY"
+      ]
+    }
+  }
+}

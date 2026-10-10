@@ -1,0 +1,14 @@
+{
+  "id": "ume",
+  "version": "0.3.3",
+  "homepage": "https://docs.ume.ai/integrations/antigravity",
+  "native": {
+    "pluginRoot": "${ANTIGRAVITY_PLUGIN_ROOT}",
+    "files": {
+      "plugin.json": "plugin.json",
+      "hooks.json": "hooks.json",
+      "mcp_config.json": "mcp_config.json",
+      "hooks/adapter.py": "hooks/adapter.py"
+    }
+  }
+}

@@ -1,0 +1,141 @@
+---
+title: "Vibecoding with UME"
+sidebarTitle: "Vibecoding"
+description: "Agent skills, starter prompts, and setup for building with UME using AI coding tools."
+icon: "wand-magic-sparkles"
+---
+
+Vibecoding means building software by describing what you want to an AI coding assistant and letting it write the code. The catch is that assistants guess at unfamiliar libraries, and a wrong guess about UME costs you a debugging session.
+
+This page fixes that three ways: skills that teach your assistant the UME SDKs, an MCP connection so it can read and write memories itself, and a starter prompt you can paste into any tool.
+
+<Note>
+Every page in these docs has a button to copy it as Markdown or send it straight to ChatGPT or Claude, so you can hand your assistant any page it needs. We follow the [llms.txt](https://docs.ume.ai/llms.txt) standard.
+</Note>
+
+## Agent skills
+
+UME ships two kinds of skills for AI coding assistants. Both work with Claude Code, Codex, Cursor, Windsurf, OpenCode, OpenClaw, and any assistant that supports the skills standard.
+
+### Reference skills (always on)
+
+Teach your assistant UME's SDK surface so it writes correct code in everyday development:
+
+```bash
+npx skills add https://github.com/fengjutian/UME --skill ume
+npx skills add https://github.com/fengjutian/UME --skill ume-cli
+npx skills add https://github.com/fengjutian/UME --skill ume-vercel-ai-sdk
+```
+
+- `ume`: Python and TypeScript SDKs (Platform + OSS), plus framework integrations (LangChain, CrewAI, OpenAI Agents, LangGraph, LlamaIndex, etc.)
+- `ume-cli`: terminal workflows for the `ume` CLI (both Node and Python builds)
+- `ume-vercel-ai-sdk`: `@ume/vercel-ai-provider` and `createUME`
+
+### Pipeline skills (run on demand)
+
+Let your assistant execute an end-to-end workflow in an existing repo. Invoked as slash commands:
+
+```bash
+npx skills add https://github.com/fengjutian/UME --skill ume-integrate
+npx skills add https://github.com/fengjutian/UME --skill ume-test-integration
+npx skills add https://github.com/fengjutian/UME --skill ume-oss-to-platform
+```
+
+- `/ume-integrate`: wire UME into an existing repository using a goal-driven, test-first pipeline. Detects the stack, asks whether to use Platform or OSS, writes failing tests first, and keeps the integration additive and feature-flagged.
+- `/ume-test-integration`: verify what `/ume-integrate` produced. Runs the repo's native test suite and a real end-to-end smoke flow against your API key, then produces a scorecard.
+- `/ume-oss-to-platform`: migrate an existing project from UME OSS to the hosted Platform SDK. Audits where UME is used, writes a reviewable migration plan, then executes it on approval.
+
+See the [skills index](https://github.com/fengjutian/UME/tree/main/skills) for the full catalog.
+
+## MCP server setup
+
+Connect Claude, Claude Code, Cursor, Windsurf, VS Code, OpenCode, or any MCP-compatible client to UME.
+
+Get your API key from <a href="https://app.ume.ai?utm_source=oss&utm_medium=vibecoding">app.ume.ai</a>, then add UME MCP with a single command:
+
+```bash
+npx mcp-add \
+  --name ume-mcp \
+  --type http \
+  --url "https://mcp.ume.ai/mcp" \
+  --clients "claude,claude code,cursor,windsurf,vscode,opencode"
+```
+
+For per-client setup and advanced options, see [UME MCP Setup](/platform/ume-mcp).
+
+## Universal starter prompt
+
+Copy this into any AI tool to start building with UME:
+
+```text
+I want to start building with UME, which gives AI agents long-term memory
+that persists across sessions, tools, and runs.
+
+## UME Resources
+
+**Documentation:**
+- Main docs: https://docs.ume.ai
+- Platform Quickstart: https://docs.ume.ai/platform/quickstart
+- OSS Python Quickstart: https://docs.ume.ai/open-source/python-quickstart
+- OSS Node.js Quickstart: https://docs.ume.ai/open-source/node-quickstart
+- API Reference: https://docs.ume.ai/api-reference
+- Full LLM-friendly docs: https://docs.ume.ai/llms.txt
+
+**Code & Examples:**
+- Core repo: https://github.com/fengjutian/UME
+- Python SDK: pip install ume
+- TypeScript SDK: npm install ume
+- Cookbooks: https://docs.ume.ai/cookbooks/overview
+
+**What UME Does:**
+UME gives AI agents long-term memory, either managed (UME Platform) or
+self-hosted (Open Source). It stores, retrieves, and manages memories so
+agents remember preferences, learn from past runs, and personalize over
+time. Storage: vector embeddings.
+
+**Architecture Overview:**
+- Memory is scoped by user_id, agent_id, or run_id
+- Core operations: add, search, update, delete
+- Store preferences, facts, and past interactions; use run_id to scope a
+  session. Platform does not expose a memory_type selector.
+- Integration pattern: retrieve relevant memories → generate response → store
+  new memories
+
+**Quick Usage (Python Platform):**
+  from ume import MemoryClient
+  client = MemoryClient(api_key="m0-xxx")
+  client.add("I prefer dark mode and use VS Code.", user_id="user1")
+  results = client.search("What editor do they use?", filters={"user_id": "user1"})
+
+**Quick Usage (JavaScript Platform):**
+  import MemoryClient from 'ume';
+  const client = new MemoryClient({ apiKey: 'm0-xxx' });
+  await client.add([{ role: "user", content: "I prefer dark mode." }], { userId: "user1" });
+  const results = await client.search("What editor?", { filters: { user_id: "user1" } });
+
+**Quick Usage (Python Open Source):**
+  from ume import Memory
+  m = Memory()
+  m.add("I prefer dark mode and use VS Code.", user_id="user1")
+  results = m.search("What editor do they use?", filters={"user_id": "user1"})
+
+Help me integrate UME into my project. Start by asking what I'm building,
+what language/framework I'm using, and whether I want managed or self-hosted.
+```
+
+## Go deeper
+
+<CardGroup cols={2}>
+  <Card title="Platform quickstart" icon="cloud" href="/platform/quickstart">
+    Get started with the managed API
+  </Card>
+  <Card title="Open Source" icon="code-branch" href="/open-source/overview">
+    Self-host with full control
+  </Card>
+  <Card title="Cookbooks" icon="book" href="/cookbooks/overview">
+    Production-ready tutorials and examples
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference">
+    Explore every REST endpoint
+  </Card>
+</CardGroup>

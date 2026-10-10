@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ume-strands"
+version = "0.1.1"
+description = "Persistent long-term memory for Strands agents, backed by UME."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "UME", email = "founders@ume.ai"}
+]
+keywords = ["strands", "strands-agents", "agents", "ai", "memory", "ume", "vector-search", "personalization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# strands-agents>=1.45.0: first release shipping the `strands.memory` module
+# (MemoryStore / MemoryManager) that UMEMemoryStore implements.
+dependencies = [
+    "strands-agents>=1.45.0",
+    "ume>=2.0.11",
+]
+
+[project.urls]
+Homepage = "https://ume.ai"
+Documentation = "https://github.com/fengjutian/UME/tree/main/integrations/ume-strands#readme"
+Repository = "https://github.com/fengjutian/UME"
+Issues = "https://github.com/fengjutian/UME/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.25.0,<1.0.0",
+    "ruff>=0.11.0,<1.0.0",
+    "mypy>=1.15.0,<2.0.0",
+    "hatch",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ume_strands"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.25.0,<1.0.0",
+    "ruff>=0.11.0,<1.0.0",
+    "mypy>=1.15.0,<2.0.0",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args}"
+lint = "ruff check src tests"
+format = "ruff format src tests"
+typecheck = "mypy src"
+prepare = ["format", "lint", "typecheck", "test"]
+
+[tool.ruff]
+line-length = 120
+include = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"

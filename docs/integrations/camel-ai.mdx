@@ -1,0 +1,146 @@
+---
+title: Camel AI
+description: "Plug UME cloud memory into Camel's agents with the built‑in UMEStorage."
+partnerBadge: "Camel AI"
+---
+
+# Camel AI integration
+
+Connect Camel's agent framework to UME so every agent can persist and recall conversation context across sessions with minimal setup.
+
+<Info>
+  **Prerequisites**
+  - UME: `UME_API_KEY` (or self-hosted endpoint), `pip install ume`
+  - Camel AI: `pip install camel-ai` (requires Python 3.9+)
+  - Optional: OpenAI API key if you run LLM-backed agents
+</Info>
+
+<Note>Camel provides a Python SDK today. A TypeScript path is not available yet.</Note>
+
+## Configure credentials
+
+<Tabs>
+  <Tab title="UME">
+<Steps>
+<Step title="Export your API key">
+```bash
+export UME_API_KEY="sk-..."
+```
+</Step>
+<Step title="(Self-host) Point to your UME API">
+```bash
+export UME_BASE_URL="https://your-ume-domain"
+```
+</Step>
+</Steps>
+  </Tab>
+  <Tab title="Camel">
+<Steps>
+<Step title="Install Camel with UME dependency">
+```bash
+pip install "camel-ai>=0.2.0" ume
+```
+</Step>
+<Step title="(Optional) Add your model credentials">
+```bash
+export OPENAI_API_KEY="sk-openai..."
+```
+</Step>
+</Steps>
+  </Tab>
+</Tabs>
+
+<Tip>
+  UMEStorage reads `UME_API_KEY` automatically. Pass `api_key` explicitly only when you need to override the environment.
+</Tip>
+
+## Wire UME into a Camel agent
+
+<Steps>
+<Step title="Create a UME-backed memory store">
+```python
+import os
+from camel.storages import UMEStorage
+
+ume_store = UMEStorage(
+    api_key=os.environ.get("UME_API_KEY"),
+    agent_id="travel_agent",
+    user_id="alice",
+    metadata={"source": "camel-demo"},
+)
+```
+</Step>
+<Step title="Attach it to Camel memory">
+```python
+from camel.memories import ChatHistoryMemory, ScoreBasedContextCreator
+from camel.utils import OpenAITokenCounter
+from camel.types import ModelType
+
+memory = ChatHistoryMemory(
+    context_creator=ScoreBasedContextCreator(
+        token_counter=OpenAITokenCounter(ModelType.GPT_4O_MINI),
+        token_limit=1024,
+    ),
+    storage=ume_store,
+    agent_id="travel_agent",
+)
+```
+</Step>
+<Step title="Let your agent read and write UME">
+```python
+from camel.agents import ChatAgent
+from camel.messages import BaseMessage
+
+agent = ChatAgent(
+    system_message=BaseMessage.make_assistant_message(
+        role_name="Agent",
+        content="You are a helpful travel assistant. Reuse stored memories."
+    )
+)
+
+agent.memory = memory
+
+response = agent.step(
+    BaseMessage.make_user_message(
+        role_name="User",
+        content="I prefer boutique hotels in Paris."
+    )
+)
+
+print(response.msgs[0].content)
+```
+</Step>
+</Steps>
+
+<Info icon="check">
+  Run `python camel_ume_demo.py` (or the snippet above in a REPL). You should see the agent respond and the memory persisted to UME. Re-running with a new prompt should include the stored preference.
+</Info>
+
+## Verify the integration
+
+- UME dashboard shows new memories under `agent_id=travel_agent` and `user_id=alice`.
+- `ume_store.load()` returns the records you just wrote.
+- Camel agent replies reference prior user preferences on subsequent runs.
+
+## Troubleshooting
+
+- **Missing UME_API_KEY**: set `export UME_API_KEY="sk-..."` or pass `api_key` into `UMEStorage`.
+- **No memories returned**: ensure `agent_id`/`user_id` in your query match what you used when writing.
+- **Network errors to UME**: if self-hosting, set `UME_BASE_URL` to your deployment URL.
+
+<CardGroup cols={2}>
+  <Card
+    title="How UME works"
+    description="Understand how UME extracts, stores, and retrieves memories for your Camel agents."
+    icon="sparkles"
+    href="/core-concepts/how-it-works"
+  />
+  <Card
+    title="Try LangChain next"
+    description="Wire the same UME project into LangChain workflows."
+    icon="rocket"
+    href="/integrations/langchain"
+  />
+</CardGroup>
+
+<Snippet file="star-on-github.mdx" />

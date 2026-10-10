@@ -1,0 +1,5 @@
+name: ume
+version: 1.3.0
+description: "UME — server-side LLM fact extraction with semantic search, automatic deduplication, and opt-in reranking (platform mode)."
+pip_dependencies:
+  - ume>=2.0.10,<3
