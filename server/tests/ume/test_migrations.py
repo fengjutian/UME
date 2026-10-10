@@ -94,7 +94,7 @@ class TestRevisionChain:
 
     def test_chain_has_a_single_head(self, in_server_dir):
         script = ScriptDirectory.from_config(_config())
-        assert script.get_heads() == ["010"]
+        assert script.get_heads() == ["011"]
 
     def test_the_chain_is_linear_with_no_branches(self, in_server_dir):
         """Every UME migration extends the previous one.

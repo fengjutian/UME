@@ -458,9 +458,15 @@ def get_all_memories(
 def get_memory(memory_id: str, _auth=Depends(verify_auth)):
     """Retrieve a specific memory by ID."""
     try:
-        return get_memory_instance().get(memory_id)
+        result = get_memory_instance().get(memory_id)
     except Exception:
         raise upstream_error()
+    # The vector store returns None for an id it does not hold. Returning that
+    # directly produced 200 with a `null` body, so "no such memory" and "a
+    # memory whose fields are all null" were indistinguishable to the client.
+    if result is None:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    return result
 
 
 @app.post("/search", summary="Search memories")

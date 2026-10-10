@@ -107,6 +107,45 @@ IMPORT_TRANSITIONS: dict[ImportJobStatus, frozenset[ImportJobStatus]] = {
 #: Statuses whose data may still be read through normal UME routes.
 READABLE_WORKSPACE_STATUSES = frozenset({WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED})
 
+
+class MemoryStatus(StrEnum):
+    """Business lifecycle of a memory record (section 5.4)."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
+class EngineState(StrEnum):
+    """How far the engine half of a write got.
+
+    The business row and the engine write cannot share a transaction, so this
+    column is the recovery handle: a record stuck in `pending` or `failed` is
+    safe to retry, one in `deleting` is safe to finish.
+    """
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    DELETING = "deleting"
+    DELETED = "deleted"
+
+
+class MemoryChangeType(StrEnum):
+    CREATED = "created"
+    UPDATED = "updated"
+    RESTORED = "restored"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
+#: `current_text` is the business projection of the engine memory. A record
+#: whose projection and engine text disagree is repairable rather than lost.
+RECONCIABLE_ENGINE_STATES = frozenset({EngineState.READY, EngineState.FAILED, EngineState.DELETING})
+
+#: Statuses whose text may be returned to a caller.
+READABLE_MEMORY_STATUSES = frozenset({MemoryStatus.ACTIVE, MemoryStatus.ARCHIVED})
+
 #: Statuses a workspace can be created or restored into.
 WRITABLE_WORKSPACE_STATUSES = frozenset({WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED})
 

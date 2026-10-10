@@ -198,3 +198,22 @@ def api(db, users, monkeypatch):
         yield ApiHandle(TestClient(wrapper, raise_server_exceptions=False), holder, users, db)
     finally:
         ume_api.dependency_overrides.clear()
+
+
+@pytest.fixture
+def engine():
+    """Swap the memory engine for a fake for the duration of one test.
+
+    Lives here rather than in `fake_engine.py` because pytest only discovers
+    fixtures from conftest.py.
+    """
+    from ume_app.engine.memory_adapter import set_adapter
+
+    from fake_engine import FakeEngine
+
+    fake = FakeEngine()
+    set_adapter(fake)
+    try:
+        yield fake
+    finally:
+        set_adapter(None)

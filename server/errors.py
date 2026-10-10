@@ -11,7 +11,7 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
 class UpstreamError(HTTPException):
     def __init__(self, code: str, detail: str, request_id: str) -> None:
-        super().__init__(status_code=502, detail=detail)
+        super().__init__(status_code=_STATUS_BY_CODE.get(code, 502), detail=detail)
         self.code = code
         self.request_id = request_id
 
@@ -24,12 +24,37 @@ _BAD_REQUEST_NAMES = {"BadRequestError", "UnprocessableEntityError"}
 _DB_NAMES = {"OperationalError", "DBAPIError", "DisconnectionError"}
 _VECTOR_NAMES = {"UnexpectedResponse", "ResponseHandlingException"}
 
+# Database errors caused by a malformed value the *caller* supplied (a memory id
+# that is not a UUID, a timestamp that does not parse). psycopg raises these out
+# of an otherwise healthy pool, so without them they fall through to the generic
+# bucket and a typo'd id gets reported as a provider outage.
+_BAD_VALUE_NAMES = {
+    "InvalidTextRepresentation",
+    "DataError",
+    "NumericValueOutOfRange",
+    "InvalidDatetimeFormat",
+    "UndefinedColumn",
+    "UndefinedTable",
+    "StringDataRightTruncation",
+}
+
+#: Codes that are the caller's problem rather than the upstream provider's.
+#: Everything else keeps the historical 502.
+_STATUS_BY_CODE = {
+    "invalid_request": 400,
+}
+
 
 def _classify_one(exc: BaseException) -> tuple[str, str]:
     name = type(exc).__name__
     module = getattr(type(exc), "__module__", "") or ""
     status = getattr(exc, "status_code", None)
 
+    if name in _BAD_VALUE_NAMES:
+        return (
+            "invalid_request",
+            "The request contains a malformed identifier or value.",
+        )
     if name in _AUTH_NAMES or status in (401, 403):
         return (
             "provider_auth_failed",

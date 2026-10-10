@@ -41,6 +41,17 @@ EXPECTED_ROUTES = {
     ("POST", "/conversations/imports"),
     ("GET", "/import-jobs/{job_id}"),
     ("POST", "/import-jobs/{job_id}/retry"),
+    ("GET", "/memories"),
+    ("POST", "/memories"),
+    ("GET", "/memories/{memory_id}"),
+    ("PATCH", "/memories/{memory_id}"),
+    ("POST", "/memories/{memory_id}/archive"),
+    ("POST", "/memories/{memory_id}/restore"),
+    ("POST", "/memories/{memory_id}/forget"),
+    ("POST", "/memories/{memory_id}/retry"),
+    ("GET", "/memories/{memory_id}/sources"),
+    ("GET", "/memories/{memory_id}/versions"),
+    ("POST", "/memory-search"),
 }
 
 
@@ -53,9 +64,10 @@ class TestRouteTable:
     def test_router_exposes_exactly_the_documented_surface(self):
         assert _actual_routes(build_router()) == EXPECTED_ROUTES
 
-    def test_no_legacy_engine_route_leaked_into_ume(self):
+    def test_no_legacy_engine_only_route_leaked_into_ume(self):
+        """`/memories` is now a legitimate UME route; the engine-only surface is not."""
         paths = {route.path for route in build_router().routes}
-        assert not {"/memories", "/search", "/configure"} & paths
+        assert not {"/search", "/configure", "/configure/providers", "/reset", "/entities"} & paths
 
     def test_router_prefix_is_the_ume_v1_path(self):
         from ume_app.api.router import API_PREFIX
