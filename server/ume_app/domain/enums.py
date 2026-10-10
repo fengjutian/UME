@@ -33,6 +33,77 @@ class ProjectStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class ConversationStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class MessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+
+
+class Sensitivity(StrEnum):
+    """How freely a message body may be surfaced elsewhere in UME.
+
+    `restricted` bodies are never used as evidence excerpts and never enter
+    context assembly.
+    """
+
+    NORMAL = "normal"
+    SENSITIVE = "sensitive"
+    RESTRICTED = "restricted"
+
+
+class ImportJobStatus(StrEnum):
+    """Import state machine (section 10.2).
+
+    `EXTRACTING` is only entered when an extractor is bound; without one the
+    job goes `importing -> completed` because there is nothing to fail.
+    """
+
+    PENDING = "pending"
+    VALIDATING = "validating"
+    IMPORTING = "importing"
+    EXTRACTING = "extracting"
+    COMPLETED = "completed"
+    VALIDATION_FAILED = "validation_failed"
+    IMPORT_FAILED = "import_failed"
+    EXTRACTION_PARTIAL = "extraction_partial"
+
+
+#: Terminal states: a job in one of these never changes again on its own.
+TERMINAL_IMPORT_STATES = frozenset(
+    {
+        ImportJobStatus.COMPLETED,
+        ImportJobStatus.VALIDATION_FAILED,
+        ImportJobStatus.IMPORT_FAILED,
+        ImportJobStatus.EXTRACTION_PARTIAL,
+    }
+)
+
+#: The only forward transitions the import service is allowed to make.
+IMPORT_TRANSITIONS: dict[ImportJobStatus, frozenset[ImportJobStatus]] = {
+    ImportJobStatus.PENDING: frozenset({ImportJobStatus.VALIDATING, ImportJobStatus.VALIDATION_FAILED}),
+    ImportJobStatus.VALIDATING: frozenset({ImportJobStatus.IMPORTING, ImportJobStatus.VALIDATION_FAILED}),
+    ImportJobStatus.IMPORTING: frozenset(
+        {
+            ImportJobStatus.EXTRACTING,
+            ImportJobStatus.COMPLETED,
+            ImportJobStatus.IMPORT_FAILED,
+            ImportJobStatus.EXTRACTION_PARTIAL,
+        }
+    ),
+    ImportJobStatus.EXTRACTING: frozenset({ImportJobStatus.COMPLETED, ImportJobStatus.EXTRACTION_PARTIAL}),
+    ImportJobStatus.COMPLETED: frozenset(),
+    ImportJobStatus.VALIDATION_FAILED: frozenset({ImportJobStatus.VALIDATING}),
+    ImportJobStatus.IMPORT_FAILED: frozenset({ImportJobStatus.IMPORTING}),
+    ImportJobStatus.EXTRACTION_PARTIAL: frozenset({ImportJobStatus.EXTRACTING}),
+}
+
+
 #: Statuses whose data may still be read through normal UME routes.
 READABLE_WORKSPACE_STATUSES = frozenset({WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED})
 

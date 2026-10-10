@@ -16,7 +16,7 @@ from typing import Annotated
 
 from auth import require_auth
 from db import get_db
-from fastapi import Depends, Path
+from fastapi import Depends, Path, Query
 from sqlalchemy.orm import Session
 from ume_app.auth.permissions import Principal, role_at_least, scopes_for_role
 from ume_app.domain.enums import (
@@ -143,6 +143,46 @@ def workspace_access(*required_scopes: str):
         return resolve_access(db, actor, workspace_id, required_scopes=required_scopes)
 
     return dependency
+
+
+def workspace_query_access(*required_scopes: str):
+    """Dependency factory for collection routes that carry no workspace path segment.
+
+    Section 9.3 defines `/conversations` and `/imports` without a workspace in
+    the path, so the workspace arrives as a **required query parameter** rather
+    than being inferred from a body field. The section 7.2 rule still holds:
+    the declaration is untrusted until `resolve_access` verifies membership, and
+    no repository query runs before that check passes.
+    """
+
+    def dependency(
+        workspace_id: Annotated[uuid.UUID, Query()],
+        db: Annotated[Session, Depends(get_db)],
+        actor: Annotated[Principal, Depends(get_actor)],
+    ) -> WorkspaceAccess:
+        return resolve_access(db, actor, workspace_id, required_scopes=required_scopes)
+
+    return dependency
+
+
+def body_workspace_access(*required_scopes: str):
+    """Dependency factory for routes whose body declares the workspace.
+
+    `payload_workspace_id` must be passed explicitly by the route: FastAPI
+    cannot resolve a body field inside a dependency without re-parsing the
+    request, so the route hands it in.
+    """
+
+    def factory(payload_workspace_id: uuid.UUID):
+        def dependency(
+            db: Annotated[Session, Depends(get_db)],
+            actor: Annotated[Principal, Depends(get_actor)],
+        ) -> WorkspaceAccess:
+            return resolve_access(db, actor, payload_workspace_id, required_scopes=required_scopes)
+
+        return dependency
+
+    return factory
 
 
 def require_writable(access: WorkspaceAccess) -> None:

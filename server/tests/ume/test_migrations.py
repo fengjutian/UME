@@ -65,7 +65,30 @@ class TestRevisionChain:
 
     def test_chain_has_a_single_head(self, in_server_dir):
         script = ScriptDirectory.from_config(_config())
-        assert script.get_heads() == ["008"]
+        assert script.get_heads() == ["010"]
+
+    def test_the_chain_is_linear_with_no_branches(self, in_server_dir):
+        """Every UME migration extends the previous one.
+
+        Linear is a hard requirement here: the spec schedules the tables phase
+        by phase, and a branch would let two migrations create the same table.
+        """
+        script = ScriptDirectory.from_config(_config())
+        heads = set(script.get_heads())
+        seen = set()
+        revision = script.get_current_head()
+        while revision is not None:
+            assert revision not in seen, f"cycle at {revision}"
+            seen.add(revision)
+            down = script.get_revision(revision).down_revision
+            if down is None:
+                revision = None
+            elif isinstance(down, (tuple, list)):
+                assert len(down) == 1, f"{revision} branches into {down}"
+                revision = down[0]
+            else:
+                revision = down
+        assert heads <= seen
 
     def test_earlier_revisions_are_untouched(self, in_server_dir):
         script = ScriptDirectory.from_config(_config())
@@ -154,6 +177,70 @@ class TestOfflineAuditDDL:
 
     def test_is_additive(self, ddl):
         assert "ALTER TABLE ume_workspaces" not in ddl
+        assert "DROP TABLE" not in ddl
+
+
+class TestOfflineConversationDDL:
+    @pytest.fixture
+    def ddl(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "008:009", sql=True)
+        return buffer.getvalue()
+
+    def test_creates_both_tables(self, ddl):
+        assert "CREATE TABLE ume_conversations" in ddl
+        assert "CREATE TABLE ume_messages" in ddl
+
+    def test_content_presence_check(self, ddl):
+        assert "CONSTRAINT ck_ume_messages_has_content CHECK (content_text IS NOT NULL OR content_ref IS NOT NULL)" in ddl
+
+    def test_external_uniqueness_is_partial(self, ddl):
+        """A NULL external id must not collide with every other NULL."""
+        assert "CREATE UNIQUE INDEX uq_ume_conversations_external" in ddl
+        assert "external_conversation_id IS NOT NULL" in ddl
+        assert "CREATE UNIQUE INDEX uq_ume_messages_external" in ddl
+        assert "external_message_id IS NOT NULL" in ddl
+
+    def test_browse_and_dedup_indexes(self, ddl):
+        assert "CREATE INDEX ix_ume_messages_conversation_browse" in ddl
+        assert "CREATE INDEX ix_ume_messages_conversation_dedup" in ddl
+
+    def test_project_fk_does_not_cascade_history(self, ddl):
+        conversations = ddl.split("CREATE TABLE ume_conversations")[1].split(");")[0]
+        assert "FOREIGN KEY(project_id) REFERENCES ume_projects (id) ON DELETE SET NULL" in conversations
+
+    def test_is_additive(self, ddl):
+        assert "ALTER TABLE" not in ddl
+        assert "DROP TABLE" not in ddl
+
+
+class TestOfflineImportDDL:
+    @pytest.fixture
+    def ddl(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "009:010", sql=True)
+        return buffer.getvalue()
+
+    def test_creates_both_tables(self, ddl):
+        assert "CREATE TABLE ume_import_jobs" in ddl
+        assert "CREATE TABLE ume_idempotency_keys" in ddl
+
+    def test_import_job_idempotency_unique(self, ddl):
+        assert "CONSTRAINT uq_ume_import_jobs_workspace_idem UNIQUE (workspace_id, idempotency_key)" in ddl
+
+    def test_idempotency_key_is_scoped_to_the_actor(self, ddl):
+        """Two callers must not collide on, or read each other's, replay records."""
+        assert "CONSTRAINT uq_ume_idempotency_scope_key UNIQUE (workspace_id, actor_type, actor_id, idempotency_key)" in ddl
+
+    def test_request_hash_is_stored(self, ddl):
+        keys = ddl.split("CREATE TABLE ume_idempotency_keys")[1].split(");")[0]
+        assert "request_hash VARCHAR(64) NOT NULL" in keys
+        assert "expires_at TIMESTAMP WITH TIME ZONE NOT NULL" in keys
+
+    def test_is_additive(self, ddl):
+        assert "ALTER TABLE" not in ddl
         assert "DROP TABLE" not in ddl
 
 
