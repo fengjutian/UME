@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generic, Sequence, TypeVar
 
-from ume_app.domain.errors import ValidationError
 from sqlalchemy import Select, tuple_
 from sqlalchemy.orm import Session
+from ume_app.domain.errors import ValidationError
 
 ModelT = TypeVar("ModelT")
 

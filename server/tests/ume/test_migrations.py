@@ -1,0 +1,214 @@
+"""Migration tests for 007_create_workspaces_projects (section 6 / 16.2).
+
+Two layers:
+
+* Offline DDL generation runs everywhere — it proves the revision is wired into
+  the chain after 006 and emits the PostgreSQL DDL the spec asks for (JSONB
+  columns, the composite unique, the three project indexes).
+* A live upgrade/downgrade/upgrade round trip needs a real PostgreSQL. It is
+  skipped unless `UME_TEST_DATABASE_URL` points at a throwaway database, because
+  silently running against a developer's working database would destroy their
+  data. Compose's own database is the intended target.
+"""
+
+import contextlib
+import io
+import os
+import uuid
+from pathlib import Path
+
+import pytest
+
+alembic = pytest.importorskip("alembic", reason="alembic not installed")
+
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from alembic.script import ScriptDirectory  # noqa: E402
+
+SERVER_DIR = Path(__file__).resolve().parents[2]
+ALEMBIC_INI = SERVER_DIR / "alembic.ini"
+
+TEST_DATABASE_URL = os.environ.get("UME_TEST_DATABASE_URL", "")
+
+requires_postgres = pytest.mark.skipif(
+    not TEST_DATABASE_URL,
+    reason="set UME_TEST_DATABASE_URL to a disposable PostgreSQL database to run migration round trips",
+)
+
+
+def _config(url: str | None = None) -> Config:
+    config = Config(str(ALEMBIC_INI))
+    config.set_main_option("script_location", str(SERVER_DIR / "alembic"))
+    if url:
+        config.set_main_option("sqlalchemy.url", url)
+    return config
+
+
+@pytest.fixture
+def in_server_dir(monkeypatch):
+    """alembic.ini uses `script_location = alembic` and `prepend_sys_path = .`."""
+    monkeypatch.chdir(SERVER_DIR)
+    yield
+
+
+class TestRevisionChain:
+    def test_007_follows_006(self, in_server_dir):
+        script = ScriptDirectory.from_config(_config())
+        revisions = {rev.revision: rev for rev in script.walk_revisions()}
+        assert "007" in revisions
+        assert revisions["007"].down_revision == "006"
+
+    def test_008_follows_007(self, in_server_dir):
+        script = ScriptDirectory.from_config(_config())
+        revisions = {rev.revision: rev for rev in script.walk_revisions()}
+        assert revisions["008"].down_revision == "007"
+
+    def test_chain_has_a_single_head(self, in_server_dir):
+        script = ScriptDirectory.from_config(_config())
+        assert script.get_heads() == ["008"]
+
+    def test_earlier_revisions_are_untouched(self, in_server_dir):
+        script = ScriptDirectory.from_config(_config())
+        revisions = {rev.revision: rev for rev in script.walk_revisions()}
+        for revision in ("001", "002", "003", "004", "005", "006"):
+            assert revision in revisions, f"missing pre-existing revision {revision}"
+
+
+class TestOfflineDDL:
+    @pytest.fixture
+    def ddl(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "006:007", sql=True)
+        return buffer.getvalue()
+
+    def test_creates_the_three_business_tables(self, ddl):
+        for table in ("ume_workspaces", "ume_workspace_members", "ume_projects"):
+            assert f"CREATE TABLE {table}" in ddl
+
+    def test_jsonb_columns_with_defaults(self, ddl):
+        assert "default_memory_policy JSONB" in ddl
+        assert "'{}'::jsonb" in ddl
+        assert "tags JSONB" in ddl
+        assert "'[]'::jsonb" in ddl
+
+    def test_membership_uniqueness_is_composite(self, ddl):
+        assert "uq_ume_workspace_members_workspace_user" in ddl
+        assert "UNIQUE (workspace_id, user_id)" in ddl
+
+    def test_project_indexes_from_the_spec(self, ddl):
+        assert "CREATE INDEX ix_ume_projects_workspace_id" in ddl
+        assert "CREATE INDEX ix_ume_projects_workspace_status" in ddl
+        assert "CREATE INDEX ix_ume_projects_last_activity_at" in ddl
+
+    def test_owner_fk_is_restrict_not_cascade(self, ddl):
+        """Deleting a user must never silently delete the workspaces they own."""
+        workspaces = ddl.split("CREATE TABLE ume_workspaces")[1].split(");")[0]
+        assert "FOREIGN KEY(owner_user_id) REFERENCES users (id) ON DELETE RESTRICT" in workspaces
+
+    def test_child_tables_cascade_from_the_workspace(self, ddl):
+        projects = ddl.split("CREATE TABLE ume_projects")[1].split(");")[0]
+        assert "FOREIGN KEY(workspace_id) REFERENCES ume_workspaces (id) ON DELETE CASCADE" in projects
+
+    def test_no_ume_table_touches_existing_tables(self, ddl):
+        """Migration 007 must be additive: no ALTER/DROP against 001-006 tables."""
+        for statement in ("ALTER TABLE users", "DROP TABLE users", "ALTER TABLE api_keys", "DROP TABLE api_keys"):
+            assert statement not in ddl
+
+    def test_full_chain_generates_without_error(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "base:head", sql=True)
+        ddl = buffer.getvalue()
+        for table in ("users", "ume_workspaces", "ume_workspace_members", "ume_projects", "ume_audit_events"):
+            assert f"CREATE TABLE {table}" in ddl
+
+
+class TestOfflineAuditDDL:
+    @pytest.fixture
+    def ddl(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "007:008", sql=True)
+        return buffer.getvalue()
+
+    def test_creates_the_audit_table(self, ddl):
+        assert "CREATE TABLE ume_audit_events" in ddl
+
+    def test_workspace_fk_is_set_null(self, ddl):
+        """An audit row must outlive the workspace it refers to."""
+        audit = ddl.split("CREATE TABLE ume_audit_events")[1].split(");")[0]
+        assert "FOREIGN KEY(workspace_id) REFERENCES ume_workspaces (id) ON DELETE SET NULL" in audit
+
+    def test_actor_id_is_not_a_foreign_key(self, ddl):
+        audit = ddl.split("CREATE TABLE ume_audit_events")[1].split(");")[0]
+        assert "FOREIGN KEY(actor_id)" not in audit
+
+    def test_query_indexes(self, ddl):
+        for index in (
+            "ix_ume_audit_events_workspace_created",
+            "ix_ume_audit_events_resource",
+            "ix_ume_audit_events_actor",
+        ):
+            assert f"CREATE INDEX {index}" in ddl
+
+    def test_is_additive(self, ddl):
+        assert "ALTER TABLE ume_workspaces" not in ddl
+        assert "DROP TABLE" not in ddl
+
+
+@requires_postgres
+class TestLiveRoundTrip:
+    """Upgrade/downgrade/upgrade against a real PostgreSQL (section 6)."""
+
+    def test_upgrade_downgrade_upgrade_on_empty_database(self, in_server_dir):
+        config = _config(TEST_DATABASE_URL)
+        command.downgrade(config, "base", sql=False)
+        command.upgrade(config, "head")
+
+        from sqlalchemy import create_engine, inspect
+
+        engine = create_engine(TEST_DATABASE_URL)
+        tables = set(inspect(engine).get_table_names())
+        assert {"ume_workspaces", "ume_workspace_members", "ume_projects"} <= tables
+        assert {"users", "api_keys", "settings", "request_logs"} <= tables
+
+        command.downgrade(config, "006")
+        tables_after = set(inspect(engine).get_table_names())
+        assert not ({"ume_workspaces", "ume_workspace_members", "ume_projects"} & tables_after)
+        assert {"users", "api_keys", "settings", "request_logs"} <= tables_after
+
+        command.upgrade(config, "head")
+        assert {"ume_workspaces", "ume_projects"} <= set(inspect(engine).get_table_names())
+        engine.dispose()
+
+    def test_upgrade_on_a_database_already_at_006_keeps_existing_data(self, in_server_dir):
+        from sqlalchemy import create_engine, inspect, text
+
+        config = _config(TEST_DATABASE_URL)
+        engine = create_engine(TEST_DATABASE_URL)
+        try:
+            command.downgrade(config, "base", sql=False)
+            command.upgrade(config, "006")
+
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO users (id, name, email, password_hash, role) "
+                        "VALUES (:id, 'existing', 'existing@example.test', 'x', 'admin')"
+                    ),
+                    {"id": uuid.uuid4()},
+                )
+
+            command.upgrade(config, "head")
+            with engine.begin() as connection:
+                kept = connection.execute(
+                    text("SELECT count(*) FROM users WHERE email = :email"), {"email": "existing@example.test"}
+                ).scalar_one()
+                assert kept == 1, "upgrade 007 must not drop or hide existing users"
+
+            indexes = {index["name"] for index in inspect(engine).get_indexes("ume_projects")}
+            assert "ix_ume_projects_workspace_status" in indexes
+        finally:
+            command.downgrade(config, "base", sql=False)
+            engine.dispose()

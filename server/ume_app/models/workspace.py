@@ -3,9 +3,9 @@
 import uuid
 from datetime import datetime
 
-from ume_app.models.base import Base, JSONBType, new_uuid, utcnow
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+from ume_app.models.base import Base, JSONBType, new_uuid, utcnow
 
 
 class Workspace(Base):
@@ -29,9 +29,7 @@ class WorkspaceMember(Base):
     __tablename__ = "ume_workspace_members"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_uuid)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("ume_workspaces.id", ondelete="CASCADE"), nullable=False
-    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ume_workspaces.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

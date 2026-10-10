@@ -3,18 +3,16 @@
 import uuid
 from datetime import datetime
 
-from ume_app.models.base import Base, JSONBType, new_uuid, utcnow
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+from ume_app.models.base import Base, JSONBType, new_uuid, utcnow
 
 
 class Project(Base):
     __tablename__ = "ume_projects"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_uuid)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("ume_workspaces.id", ondelete="CASCADE"), nullable=False
-    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ume_workspaces.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSONBType, nullable=False, default=list)

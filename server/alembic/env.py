@@ -7,6 +7,7 @@ from db import Base, _build_database_url
 
 # Import models so Base.metadata picks up all tables
 import models  # noqa: F401
+import ume_app.models  # noqa: F401
 
 config = context.config
 

@@ -63,16 +63,28 @@ WRITE_SCOPES = frozenset(
     }
 )
 
-#: Everything a member of a workspace may do inside it.
-MEMBER_SCOPES = READ_SCOPES | WRITE_SCOPES
+#: Capabilities a plain member needs beyond reading and writing memories:
+#: creating/updating project rows and running an import. Without these, a
+#: member could write memories but not decide which project they belong to.
+MEMBER_SCOPES = (
+    READ_SCOPES
+    | WRITE_SCOPES
+    | {
+        Scope.PROJECT_WRITE,
+        Scope.IMPORT_WRITE,
+    }
+)
 
-#: Plus workspace/project/connector/import administration.
-ADMIN_SCOPES = MEMBER_SCOPES | {
-    Scope.WORKSPACE_MANAGE,
-    Scope.PROJECT_WRITE,
-    Scope.CONNECTOR_MANAGE,
-    Scope.IMPORT_WRITE,
-}
+#: Capabilities reserved for admins: administering the workspace itself and
+#: issuing connector credentials.
+ADMIN_ONLY_SCOPES = frozenset(
+    {
+        Scope.WORKSPACE_MANAGE,
+        Scope.CONNECTOR_MANAGE,
+    }
+)
+
+ADMIN_SCOPES = MEMBER_SCOPES | ADMIN_ONLY_SCOPES
 
 ALL_SCOPES = ADMIN_SCOPES
 
