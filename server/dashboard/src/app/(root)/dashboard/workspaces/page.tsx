@@ -26,7 +26,9 @@ export default function WorkspacesPage() {
     isLoading,
     error,
     refetch,
-  } = useApiQuery<UmePage<UmeWorkspace>>(() => umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }));
+  } = useApiQuery<UmePage<UmeWorkspace>>(() =>
+    umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }),
+  );
 
   const workspaces = page?.items ?? [];
 
@@ -45,7 +47,8 @@ export default function WorkspacesPage() {
     } catch (err) {
       toast({
         title: "Could not create the workspace",
-        description: err instanceof UmeApiError ? err.message : "Request failed",
+        description:
+          err instanceof UmeApiError ? err.message : "Request failed",
         variant: "destructive",
       });
     } finally {
@@ -75,7 +78,11 @@ export default function WorkspacesPage() {
       {error && (
         <Card className="p-4 text-sm text-destructive">
           {error}
-          <Button variant="link" className="ml-2 px-0" onClick={() => refetch()}>
+          <Button
+            variant="link"
+            className="ml-2 px-0"
+            onClick={() => refetch()}
+          >
             Retry
           </Button>
         </Card>
@@ -97,7 +104,9 @@ export default function WorkspacesPage() {
             {
               key: "status",
               label: "Status",
-              render: (value) => <Badge variant="outline">{String(value)}</Badge>,
+              render: (value) => (
+                <Badge variant="outline">{String(value)}</Badge>
+              ),
             },
             {
               key: "description",
@@ -107,7 +116,8 @@ export default function WorkspacesPage() {
             {
               key: "created_at",
               label: "Created",
-              render: (value) => format(new Date(String(value)), "yyyy-MM-dd HH:mm"),
+              render: (value) =>
+                format(new Date(String(value)), "yyyy-MM-dd HH:mm"),
             },
           ]}
         />

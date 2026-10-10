@@ -31,8 +31,8 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const { data: workspaces } = useApiQuery<UmePage<UmeWorkspace>>(
-    () => umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }),
+  const { data: workspaces } = useApiQuery<UmePage<UmeWorkspace>>(() =>
+    umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }),
   );
 
   // Default to the first workspace once the list resolves, rather than making
@@ -47,7 +47,9 @@ export default function ProjectsPage() {
   } = useApiQuery<UmePage<UmeProject>>(
     () =>
       effectiveWorkspaceId
-        ? umeGet(UME_ENDPOINTS.WORKSPACE_PROJECTS(effectiveWorkspaceId), { limit: 50 })
+        ? umeGet(UME_ENDPOINTS.WORKSPACE_PROJECTS(effectiveWorkspaceId), {
+            limit: 50,
+          })
         : Promise.resolve({ items: [], next_cursor: null, has_more: false }),
     { enabled: Boolean(effectiveWorkspaceId) },
   );
@@ -57,21 +59,28 @@ export default function ProjectsPage() {
   const onCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed || !effectiveWorkspaceId) {
-      toast({ title: "Workspace and name are required", variant: "destructive" });
+      toast({
+        title: "Workspace and name are required",
+        variant: "destructive",
+      });
       return;
     }
     setCreating(true);
     try {
-      await umePost<UmeProject>(UME_ENDPOINTS.WORKSPACE_PROJECTS(effectiveWorkspaceId), {
-        name: trimmed,
-      });
+      await umePost<UmeProject>(
+        UME_ENDPOINTS.WORKSPACE_PROJECTS(effectiveWorkspaceId),
+        {
+          name: trimmed,
+        },
+      );
       setName("");
       toast({ title: "Project created" });
       await refetch();
     } catch (err) {
       toast({
         title: "Could not create the project",
-        description: err instanceof UmeApiError ? err.message : "Request failed",
+        description:
+          err instanceof UmeApiError ? err.message : "Request failed",
         variant: "destructive",
       });
     } finally {
@@ -84,7 +93,10 @@ export default function ProjectsPage() {
       <Card className="flex flex-col gap-3 p-4">
         <div className="flex flex-col gap-2">
           <Label htmlFor="workspace-select">Workspace</Label>
-          <Select value={effectiveWorkspaceId ?? NONE} onValueChange={setWorkspaceId}>
+          <Select
+            value={effectiveWorkspaceId ?? NONE}
+            onValueChange={setWorkspaceId}
+          >
             <SelectTrigger id="workspace-select">
               <SelectValue placeholder="Select a workspace" />
             </SelectTrigger>
@@ -110,7 +122,10 @@ export default function ProjectsPage() {
               maxLength={255}
             />
           </div>
-          <Button onClick={onCreate} disabled={creating || !effectiveWorkspaceId}>
+          <Button
+            onClick={onCreate}
+            disabled={creating || !effectiveWorkspaceId}
+          >
             <Plus className="size-4" />
             Create
           </Button>
@@ -120,7 +135,11 @@ export default function ProjectsPage() {
       {error && (
         <Card className="p-4 text-sm text-destructive">
           {error}
-          <Button variant="link" className="ml-2 px-0" onClick={() => refetch()}>
+          <Button
+            variant="link"
+            className="ml-2 px-0"
+            onClick={() => refetch()}
+          >
             Retry
           </Button>
         </Card>
@@ -142,7 +161,9 @@ export default function ProjectsPage() {
             {
               key: "status",
               label: "Status",
-              render: (value) => <Badge variant="outline">{String(value)}</Badge>,
+              render: (value) => (
+                <Badge variant="outline">{String(value)}</Badge>
+              ),
             },
             {
               key: "tags",
@@ -153,7 +174,9 @@ export default function ProjectsPage() {
               key: "last_activity_at",
               label: "Last activity",
               render: (value) =>
-                value ? format(new Date(String(value)), "yyyy-MM-dd HH:mm") : "—",
+                value
+                  ? format(new Date(String(value)), "yyyy-MM-dd HH:mm")
+                  : "—",
             },
           ]}
         />

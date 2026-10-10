@@ -20,9 +20,8 @@ export default function ConversationDetailPage({
 }) {
   const { id } = use(params);
 
-  const { data: conversation, error: conversationError } = useApiQuery<UmeConversation>(() =>
-    umeGet(UME_ENDPOINTS.CONVERSATION(id)),
-  );
+  const { data: conversation, error: conversationError } =
+    useApiQuery<UmeConversation>(() => umeGet(UME_ENDPOINTS.CONVERSATION(id)));
 
   const {
     data: page,
@@ -46,23 +45,32 @@ export default function ConversationDetailPage({
       </Link>
 
       {conversationError && (
-        <Card className="p-4 text-sm text-destructive">{conversationError}</Card>
+        <Card className="p-4 text-sm text-destructive">
+          {conversationError}
+        </Card>
       )}
 
       {conversation && (
         <Card className="flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-medium">{conversation.title ?? "(untitled)"}</h2>
+            <h2 className="text-lg font-medium">
+              {conversation.title ?? "(untitled)"}
+            </h2>
             <Badge variant="outline">{conversation.status}</Badge>
             <Badge variant="outline">{conversation.source_type}</Badge>
           </div>
           <div className="flex flex-wrap gap-4 text-sm text-onSurface-default-secondary">
             <span>Workspace: {conversation.workspace_id}</span>
-            {conversation.project_id && <span>Project: {conversation.project_id}</span>}
+            {conversation.project_id && (
+              <span>Project: {conversation.project_id}</span>
+            )}
             <span>
               Last message:{" "}
               {conversation.last_message_at
-                ? format(new Date(conversation.last_message_at), "yyyy-MM-dd HH:mm:ss")
+                ? format(
+                    new Date(conversation.last_message_at),
+                    "yyyy-MM-dd HH:mm:ss",
+                  )
                 : "—"}
             </span>
           </div>
@@ -81,7 +89,10 @@ export default function ConversationDetailPage({
       {isLoading ? (
         <TableSkeleton />
       ) : messages.length === 0 ? (
-        <EmptyState title="No messages" description="This conversation has no archived messages." />
+        <EmptyState
+          title="No messages"
+          description="This conversation has no archived messages."
+        />
       ) : (
         <div className="flex flex-col gap-2">
           {messages.map((message) => (
@@ -91,13 +102,18 @@ export default function ConversationDetailPage({
                 {message.sensitivity !== "normal" && (
                   <Badge variant="outline">{message.sensitivity}</Badge>
                 )}
-                <span>{format(new Date(message.message_at), "yyyy-MM-dd HH:mm:ss")}</span>
+                <span>
+                  {format(new Date(message.message_at), "yyyy-MM-dd HH:mm:ss")}
+                </span>
                 {message.external_message_id && (
-                  <span className="font-mono">{message.external_message_id}</span>
+                  <span className="font-mono">
+                    {message.external_message_id}
+                  </span>
                 )}
               </div>
               <p className="whitespace-pre-wrap text-sm">
-                {message.content_text ?? "(no inline text — content is referenced externally)"}
+                {message.content_text ??
+                  "(no inline text — content is referenced externally)"}
               </p>
             </Card>
           ))}

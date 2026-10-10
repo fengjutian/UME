@@ -5,7 +5,6 @@ duplicate rows, and a cross-workspace id must never resolve.
 """
 
 import uuid
-from datetime import datetime, timezone
 
 from envelope import envelope_error, envelope_ok
 

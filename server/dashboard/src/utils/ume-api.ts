@@ -88,7 +88,10 @@ function toUmeError(error: unknown): UmeApiError {
   );
 }
 
-export const umeGet = async <T>(url: string, params?: Record<string, unknown>) => {
+export const umeGet = async <T>(
+  url: string,
+  params?: Record<string, unknown>,
+) => {
   try {
     return unwrap<T>((await api.get(url, { params })).data);
   } catch (error) {
@@ -96,7 +99,11 @@ export const umeGet = async <T>(url: string, params?: Record<string, unknown>) =
   }
 };
 
-export const umePost = async <T>(url: string, body?: unknown, headers?: Record<string, string>) => {
+export const umePost = async <T>(
+  url: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+) => {
   try {
     return unwrap<T>((await api.post(url, body, { headers })).data);
   } catch (error) {

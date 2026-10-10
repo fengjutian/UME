@@ -24,8 +24,8 @@ const NONE = "__none__";
 export default function ConversationsPage() {
   const [workspaceId, setWorkspaceId] = useState<string | undefined>(undefined);
 
-  const { data: workspaces } = useApiQuery<UmePage<UmeWorkspace>>(
-    () => umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }),
+  const { data: workspaces } = useApiQuery<UmePage<UmeWorkspace>>(() =>
+    umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 50 }),
   );
 
   const effectiveWorkspaceId = workspaceId ?? workspaces?.items[0]?.id;
@@ -38,7 +38,10 @@ export default function ConversationsPage() {
   } = useApiQuery<UmePage<UmeConversation>>(
     () =>
       effectiveWorkspaceId
-        ? umeGet(UME_ENDPOINTS.CONVERSATIONS, { workspace_id: effectiveWorkspaceId, limit: 50 })
+        ? umeGet(UME_ENDPOINTS.CONVERSATIONS, {
+            workspace_id: effectiveWorkspaceId,
+            limit: 50,
+          })
         : Promise.resolve({ items: [], next_cursor: null, has_more: false }),
     { enabled: Boolean(effectiveWorkspaceId) },
   );
@@ -51,7 +54,10 @@ export default function ConversationsPage() {
         <label htmlFor="conversation-workspace" className="text-sm font-medium">
           Workspace
         </label>
-        <Select value={effectiveWorkspaceId ?? NONE} onValueChange={setWorkspaceId}>
+        <Select
+          value={effectiveWorkspaceId ?? NONE}
+          onValueChange={setWorkspaceId}
+        >
           <SelectTrigger id="conversation-workspace">
             <SelectValue placeholder="Select a workspace" />
           </SelectTrigger>
@@ -89,23 +95,33 @@ export default function ConversationsPage() {
             window.location.href = `/dashboard/conversations/${row.id}`;
           }}
           columns={[
-            { key: "title", label: "Title", render: (value) => value ?? "(untitled)" },
+            {
+              key: "title",
+              label: "Title",
+              render: (value) => value ?? "(untitled)",
+            },
             {
               key: "source_type",
               label: "Source",
-              render: (value) => <Badge variant="outline">{String(value)}</Badge>,
+              render: (value) => (
+                <Badge variant="outline">{String(value)}</Badge>
+              ),
             },
             {
               key: "started_at",
               label: "Started",
               render: (value) =>
-                value ? format(new Date(String(value)), "yyyy-MM-dd HH:mm") : "—",
+                value
+                  ? format(new Date(String(value)), "yyyy-MM-dd HH:mm")
+                  : "—",
             },
             {
               key: "last_message_at",
               label: "Last message",
               render: (value) =>
-                value ? format(new Date(String(value)), "yyyy-MM-dd HH:mm") : "—",
+                value
+                  ? format(new Date(String(value)), "yyyy-MM-dd HH:mm")
+                  : "—",
             },
           ]}
         />

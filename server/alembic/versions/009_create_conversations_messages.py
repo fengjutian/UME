@@ -103,9 +103,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_ume_messages_workspace_id", "ume_messages", ["workspace_id"])
-    op.create_index(
-        "ix_ume_messages_conversation_browse", "ume_messages", ["conversation_id", "message_at", "id"]
-    )
+    op.create_index("ix_ume_messages_conversation_browse", "ume_messages", ["conversation_id", "message_at", "id"])
     op.create_index(
         "ix_ume_messages_conversation_dedup", "ume_messages", ["conversation_id", "content_hash", "message_at"]
     )

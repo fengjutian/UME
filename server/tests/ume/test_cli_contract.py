@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from ume_app.api.router import build_router
 
 CLI_SPEC = Path(__file__).resolve().parents[2].parent / "cli" / "cli-spec.json"

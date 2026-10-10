@@ -59,7 +59,8 @@ export const UME_ENDPOINTS = {
   PROJECT: (projectId: string) => `${UME_PREFIX}/projects/${projectId}`,
 
   CONVERSATIONS: `${UME_PREFIX}/conversations`,
-  CONVERSATION: (conversationId: string) => `${UME_PREFIX}/conversations/${conversationId}`,
+  CONVERSATION: (conversationId: string) =>
+    `${UME_PREFIX}/conversations/${conversationId}`,
   MESSAGES: (conversationId: string) =>
     `${UME_PREFIX}/conversations/${conversationId}/messages`,
   IMPORT_PREVIEW: `${UME_PREFIX}/conversations/imports/preview`,

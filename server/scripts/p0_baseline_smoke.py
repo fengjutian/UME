@@ -85,11 +85,10 @@ def ensure_admin():
 
 def provision_second_tenant():
     """Create a user outside the API and mint its token with the server's helper."""
-    from sqlalchemy import select
-
     from auth import create_access_token
     from db import SessionLocal
     from models import User
+    from sqlalchemy import select
 
     with SessionLocal() as session:
         existing = session.scalar(select(User).where(User.email == OTHER_EMAIL))
@@ -200,14 +199,27 @@ def main():
             "external_conversation_id": "baseline-1",
             "messages": [
                 {"role": "user", "content": "hello", "timestamp": "2026-10-01T12:00:00Z", "external_message_id": "m1"},
-                {"role": "assistant", "content": "hi", "timestamp": "2026-10-01T12:00:05Z", "external_message_id": "m2"},
+                {
+                    "role": "assistant",
+                    "content": "hi",
+                    "timestamp": "2026-10-01T12:00:05Z",
+                    "external_message_id": "m2",
+                },
             ],
         }
         _, first = call(
-            "POST", "/api/ume/v1/conversations/imports", body=payload, headers={**auth, "Idempotency-Key": "b1"}, expect=201
+            "POST",
+            "/api/ume/v1/conversations/imports",
+            body=payload,
+            headers={**auth, "Idempotency-Key": "b1"},
+            expect=201,
         )
         _, second = call(
-            "POST", "/api/ume/v1/conversations/imports", body=payload, headers={**auth, "Idempotency-Key": "b2"}, expect=201
+            "POST",
+            "/api/ume/v1/conversations/imports",
+            body=payload,
+            headers={**auth, "Idempotency-Key": "b2"},
+            expect=201,
         )
         inserted = first["data"]["result_summary"]["inserted"]
         replay_inserted = second["data"]["result_summary"]["inserted"]
@@ -219,7 +231,11 @@ def main():
             raise AssertionError(f"preview missed duplicates: {preview['data']}")
 
         _, replay = call(
-            "POST", "/api/ume/v1/conversations/imports", body=payload, headers={**auth, "Idempotency-Key": "b1"}, expect=201
+            "POST",
+            "/api/ume/v1/conversations/imports",
+            body=payload,
+            headers={**auth, "Idempotency-Key": "b1"},
+            expect=201,
         )
         if not replay["data"]["replayed"]:
             raise AssertionError("same idempotency key did not replay")

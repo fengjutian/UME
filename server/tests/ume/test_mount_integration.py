@@ -38,6 +38,7 @@ def server_app():
         sys.path.insert(0, str(SERVER_DIR))
     try:
         import auth
+
         import ume
     except Exception as exc:  # pragma: no cover - depends on the local env
         pytest.skip(f"memory SDK is not importable here: {exc}")
