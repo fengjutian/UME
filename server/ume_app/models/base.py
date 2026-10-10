@@ -22,8 +22,22 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime | None) -> datetime | None:
+    """Attach UTC to a naive datetime.
+
+    SQLite silently drops tzinfo on round-trip even for
+    `DateTime(timezone=True)`, so any Python-side comparison between a value
+    read back from the database and `utcnow()` has to normalise first. Doing it
+    here rather than at each call site keeps the comparison correct on both
+    backends instead of only on the one we happen to deploy.
+    """
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def new_uuid() -> uuid.UUID:
     return uuid.uuid4()
 
 
-__all__ = ["Base", "JSONBType", "new_uuid", "utcnow"]
+__all__ = ["Base", "JSONBType", "as_utc", "new_uuid", "utcnow"]

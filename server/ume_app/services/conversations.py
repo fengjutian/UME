@@ -5,7 +5,7 @@ from typing import Any
 
 from ume_app.auth.dependencies import WorkspaceAccess, require_writable
 from ume_app.domain.enums import ConversationStatus
-from ume_app.models.base import utcnow
+from ume_app.models.base import as_utc, utcnow
 from ume_app.models.conversation import Conversation, Message
 from ume_app.repositories.base import Page
 from ume_app.repositories.conversations import ConversationRepository, MessageRepository
@@ -151,7 +151,7 @@ def append_messages(
     if inserted:
         timestamps = [p.get("timestamp") for p in payloads if p.get("timestamp")]
         newest = max(timestamps) if timestamps else utcnow()
-        if conversation.last_message_at is None or newest > conversation.last_message_at:
+        if as_utc(conversation.last_message_at) is None or newest > as_utc(conversation.last_message_at):
             conversation.last_message_at = newest
         if conversation.started_at is None:
             conversation.started_at = min(timestamps) if timestamps else newest

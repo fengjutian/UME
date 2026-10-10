@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from ume_app.domain.enums import ImportJobStatus
 from ume_app.domain.errors import NotFoundError
-from ume_app.models.base import utcnow
+from ume_app.models.base import as_utc, utcnow
 from ume_app.models.import_job import IdempotencyKey, ImportJob
 from ume_app.repositories.base import ScopedRepository
 
@@ -100,7 +100,7 @@ class IdempotencyKeyRepository(ScopedRepository[IdempotencyKey]):
                 IdempotencyKey.idempotency_key == key,
             )
         ).scalar_one_or_none()
-        if record is not None and record.expires_at <= utcnow():
+        if record is not None and as_utc(record.expires_at) <= utcnow():
             return None
         return record
 

@@ -13,8 +13,8 @@ from ume_app.api.app import create_ume_app
 from ume_app.api.router import build_router
 from ume_app.domain.errors import UmeError
 
-#: Exactly the workspace/project surface Task 1.2 delivers. The conversation,
-#: memory, graph, connector and export routes arrive with their own phases.
+#: Exactly the workspace/project/conversation surface P1 delivers. The memory,
+#: graph, connector and export routes arrive with their own phases.
 EXPECTED_ROUTES = {
     ("GET", "/workspaces"),
     ("POST", "/workspaces"),
@@ -30,6 +30,17 @@ EXPECTED_ROUTES = {
     ("GET", "/projects/{project_id}"),
     ("PATCH", "/projects/{project_id}"),
     ("DELETE", "/projects/{project_id}"),
+    ("GET", "/conversations"),
+    ("POST", "/conversations"),
+    ("GET", "/conversations/{conversation_id}"),
+    ("PATCH", "/conversations/{conversation_id}"),
+    ("DELETE", "/conversations/{conversation_id}"),
+    ("GET", "/conversations/{conversation_id}/messages"),
+    ("POST", "/conversations/{conversation_id}/messages"),
+    ("POST", "/conversations/imports/preview"),
+    ("POST", "/conversations/imports"),
+    ("GET", "/import-jobs/{job_id}"),
+    ("POST", "/import-jobs/{job_id}/retry"),
 }
 
 

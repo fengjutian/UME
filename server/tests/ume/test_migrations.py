@@ -24,6 +24,7 @@ alembic = pytest.importorskip("alembic", reason="alembic not installed")
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = SERVER_DIR / "alembic.ini"
@@ -34,6 +35,34 @@ requires_postgres = pytest.mark.skipif(
     not TEST_DATABASE_URL,
     reason="set UME_TEST_DATABASE_URL to a disposable PostgreSQL database to run migration round trips",
 )
+
+
+@pytest.fixture
+def live_postgres(in_server_dir, monkeypatch):
+    """Point `alembic/env.py` at the database named by UME_TEST_DATABASE_URL.
+
+    `env.py` overrides `sqlalchemy.url` with `_build_database_url()`, which is
+    assembled from POSTGRES_* variables. So the URL is decomposed into those
+    variables rather than passed through, and the reconstruction is asserted:
+    without that check a mistyped variable would let the round-trip tests run
+    against a *different* database and still report success.
+    """
+    if not TEST_DATABASE_URL:
+        pytest.skip("UME_TEST_DATABASE_URL is not set")
+    url = make_url(TEST_DATABASE_URL)
+    assert url.drivername.startswith("postgresql"), "live tests need a PostgreSQL URL"
+    monkeypatch.setenv("POSTGRES_HOST", url.host or "127.0.0.1")
+    monkeypatch.setenv("POSTGRES_PORT", str(url.port or 5432))
+    monkeypatch.setenv("POSTGRES_USER", url.username or "postgres")
+    monkeypatch.setenv("POSTGRES_PASSWORD", url.password or "")
+    monkeypatch.setenv("APP_DB_NAME", (url.database or "postgres").removeprefix("/"))
+
+    from db import _build_database_url
+
+    rebuilt = make_url(_build_database_url())
+    assert rebuilt.host == url.host and rebuilt.port == url.port
+    assert rebuilt.database == url.database, "env.py would redirect the test to a different database"
+    return TEST_DATABASE_URL
 
 
 def _config(url: str | None = None) -> Config:
@@ -193,7 +222,9 @@ class TestOfflineConversationDDL:
         assert "CREATE TABLE ume_messages" in ddl
 
     def test_content_presence_check(self, ddl):
-        assert "CONSTRAINT ck_ume_messages_has_content CHECK (content_text IS NOT NULL OR content_ref IS NOT NULL)" in ddl
+        assert (
+            "CONSTRAINT ck_ume_messages_has_content CHECK (content_text IS NOT NULL OR content_ref IS NOT NULL)" in ddl
+        )
 
     def test_external_uniqueness_is_partial(self, ddl):
         """A NULL external id must not collide with every other NULL."""
@@ -232,7 +263,10 @@ class TestOfflineImportDDL:
 
     def test_idempotency_key_is_scoped_to_the_actor(self, ddl):
         """Two callers must not collide on, or read each other's, replay records."""
-        assert "CONSTRAINT uq_ume_idempotency_scope_key UNIQUE (workspace_id, actor_type, actor_id, idempotency_key)" in ddl
+        assert (
+            "CONSTRAINT uq_ume_idempotency_scope_key UNIQUE (workspace_id, actor_type, actor_id, idempotency_key)"
+            in ddl
+        )
 
     def test_request_hash_is_stored(self, ddl):
         keys = ddl.split("CREATE TABLE ume_idempotency_keys")[1].split(");")[0]
@@ -248,7 +282,7 @@ class TestOfflineImportDDL:
 class TestLiveRoundTrip:
     """Upgrade/downgrade/upgrade against a real PostgreSQL (section 6)."""
 
-    def test_upgrade_downgrade_upgrade_on_empty_database(self, in_server_dir):
+    def test_upgrade_downgrade_upgrade_on_empty_database(self, live_postgres):
         config = _config(TEST_DATABASE_URL)
         command.downgrade(config, "base", sql=False)
         command.upgrade(config, "head")
@@ -269,7 +303,7 @@ class TestLiveRoundTrip:
         assert {"ume_workspaces", "ume_projects"} <= set(inspect(engine).get_table_names())
         engine.dispose()
 
-    def test_upgrade_on_a_database_already_at_006_keeps_existing_data(self, in_server_dir):
+    def test_upgrade_on_a_database_already_at_006_keeps_existing_data(self, live_postgres):
         from sqlalchemy import create_engine, inspect, text
 
         config = _config(TEST_DATABASE_URL)

@@ -28,6 +28,7 @@ from ume_app.schemas.conversation import (
     ConversationCreate,
     ConversationImport,
     ConversationPatch,
+    ImportPreviewOut,
     MessagesAppend,
 )
 from ume_app.services import conversations as conversation_service
@@ -227,7 +228,8 @@ def preview_import(
     actor: Annotated[Principal, Depends(get_actor)],
 ):
     access = resolve_access(db, actor, payload.workspace_id, required_scopes=(Scope.CONVERSATION_WRITE,))
-    return success(import_service.preview(access, payload.model_dump()))
+    preview = import_service.preview(access, payload.model_dump())
+    return success(ImportPreviewOut(**preview).model_dump(mode="json"))
 
 
 @router.post(
@@ -239,18 +241,18 @@ def run_import(
     payload: ConversationImport,
     db: Annotated[Session, Depends(get_db)],
     actor: Annotated[Principal, Depends(get_actor)],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=255)] = "",
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)],
 ):
+    """Import a conversation.
+
+    `Idempotency-Key` is required, not derived from the body. An auto-derived
+    key would make "import the same payload again" a replay forever, which
+    would silently hide the section 10.3 dedup path that a connector retry
+    actually exercises.
+    """
     access = resolve_access(db, actor, payload.workspace_id, required_scopes=(Scope.CONVERSATION_WRITE,))
-    key = idempotency_key or f"auto:{request_digest(payload)}"
-    job, replayed = import_service.run_import(access, payload.model_dump(), idempotency_key=key)
+    job, replayed = import_service.run_import(access, payload.model_dump(), idempotency_key=idempotency_key)
     return created({**dump(job), "replayed": replayed})
-
-
-def request_digest(payload) -> str:
-    from ume_app.services.hashing import request_hash
-
-    return request_hash(payload.model_dump(mode="json", exclude_none=True))[:32]
 
 
 # ---------------------------------------------------------------------------

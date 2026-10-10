@@ -4,11 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import {
   Activity,
+  Building2,
   ChartLine,
   ChevronDown,
   FolderInput,
+  FolderKanban,
   GalleryVerticalEnd,
   KeyRound,
+  MessagesSquare,
   Settings,
   Tags,
   Users,
@@ -80,6 +83,61 @@ export function MainNav({
                     url: "/dashboard/entities",
                     icon: Users,
                     active: pathname === "/dashboard/entities",
+                  },
+                ].map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      collapsed={isSidebarCollapsed}
+                      active={item.active}
+                      tooltip={isSidebarCollapsed ? item.title : undefined}
+                    >
+                      <Link
+                        href={item.url}
+                        className={cn(
+                          "flex items-center w-full",
+                          isSidebarCollapsed
+                            ? "justify-center mx-auto"
+                            : "gap-1.5",
+                        )}
+                      >
+                        <item.icon className="size-4 shrink-0" />
+                        {!isSidebarCollapsed && <span>{item.title}</span>}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </div>
+
+              {isSidebarCollapsed && (
+                <div className="h-[1px] w-full bg-memBorder-primary my-2" />
+              )}
+
+              <div className="flex flex-col gap-0">
+                {!isSidebarCollapsed && (
+                  <SidebarGroupLabel className="mb-0">UME V1</SidebarGroupLabel>
+                )}
+                {[
+                  {
+                    title: "Workspaces",
+                    url: "/dashboard/workspaces",
+                    icon: Building2,
+                    active: pathname === "/dashboard/workspaces",
+                  },
+                  {
+                    title: "Projects",
+                    url: "/dashboard/projects",
+                    icon: FolderKanban,
+                    active: pathname === "/dashboard/projects",
+                  },
+                  {
+                    title: "Conversations",
+                    url: "/dashboard/conversations",
+                    icon: MessagesSquare,
+                    // Also active on a conversation detail page.
+                    active:
+                      pathname === "/dashboard/conversations" ||
+                      pathname.startsWith("/dashboard/conversations/"),
                   },
                 ].map((item) => (
                   <SidebarMenuItem key={item.title}>
