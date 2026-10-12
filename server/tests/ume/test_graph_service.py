@@ -9,10 +9,10 @@ one place.
 import pytest
 from ume_app.auth.dependencies import resolve_access
 from ume_app.auth.permissions import Principal
+from ume_app.domain.enums import EdgeStatus
 from ume_app.models.base import utcnow
 from ume_app.models.graph import MemoryEdge
 from ume_app.models.memory import MemoryRecord, MemoryVersion
-from ume_app.domain.enums import EdgeStatus
 from ume_app.services.graph import (
     MAX_CONTEXT_TOKENS,
     MAX_INITIAL_NODES,

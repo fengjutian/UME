@@ -175,3 +175,8 @@ class RelationType(StrEnum):
     SUPERSEDES = "supersedes"
     DERIVED_FROM = "derived_from"
     RELATED_TO = "related_to"
+
+
+class ConnectorStatus(StrEnum):
+    ACTIVE = "active"
+    REVOKED = "revoked"

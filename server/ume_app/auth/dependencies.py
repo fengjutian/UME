@@ -14,22 +14,32 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
-from auth import require_auth
+from auth import api_key_header, bearer_scheme, require_auth, verify_auth
 from db import get_db
-from fastapi import Depends, Path, Query
+from fastapi import Depends, Path, Query, Request
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from ume_app.auth.credentials import (
+    PREFIX_DISPLAY_LENGTH,
+    looks_like_connector_token,
+    resolve,
+)
 from ume_app.auth.permissions import Principal, role_at_least, scopes_for_role
 from ume_app.domain.enums import (
     READABLE_WORKSPACE_STATUSES,
+    ActorType,
     WorkspaceRole,
     WorkspaceStatus,
 )
 from ume_app.domain.errors import (
     NotFoundError,
     PermissionDeniedError,
+    UnauthenticatedError,
     WorkspaceArchivedError,
 )
+from ume_app.models.base import utcnow
 from ume_app.models.workspace import Workspace
+from ume_app.repositories.connectors import ConnectorRepository
 from ume_app.repositories.workspaces import (
     WorkspaceMemberRepository,
     WorkspaceRepository,
@@ -38,11 +48,17 @@ from ume_app.repositories.workspaces import (
 
 @dataclass
 class WorkspaceAccess:
-    """Resolved authorization context for one workspace-scoped request."""
+    """Resolved authorization context for one workspace-scoped request.
+
+    `role` is `None` for a connector: a connector has no membership row, only a
+    scope set bound to one workspace. Every helper that asks "is this actor at
+    least an admin?" therefore fails for a connector, which is the intent —
+    connectors never administer.
+    """
 
     db: Session
     workspace: Workspace
-    role: WorkspaceRole
+    role: WorkspaceRole | None
     principal: Principal
 
     @property
@@ -55,13 +71,43 @@ class WorkspaceAccess:
         return self.principal.actor_id
 
 
-async def get_actor(user=Depends(require_auth)) -> Principal:
-    """Identity only. Data scopes stay empty until a workspace resolves a role."""
-    return Principal(
-        actor_type="user",
-        actor_id=user.id,
-        scopes=frozenset(),
-    )
+async def get_actor(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    x_api_key: Annotated[str | None, Depends(api_key_header)],
+) -> Principal:
+    """Resolve the caller as either a connector credential or a user.
+
+    Both share `Authorization: Bearer` and are told apart by the `umec_` token
+    prefix, so a client needs one auth path rather than two. This is the single
+    actor dependency every UME route uses — a second one would let a route
+    silently accept only one of the two principal kinds.
+    """
+    token = credentials.credentials if credentials is not None else None
+    if token and looks_like_connector_token(token):
+        return _resolve_connector_actor(db, token)
+
+    user = await require_auth(request, await verify_auth(request, credentials, x_api_key))
+    return Principal(actor_type="user", actor_id=user.id, scopes=frozenset())
+
+
+def _resolve_connector_actor(db: Session, token: str) -> Principal:
+    """Authenticate a connector token and build its Principal.
+
+    Revocation is re-read from the database on every call: a cached "this token
+    was valid" decision would outlive the revoke.
+    """
+    prefix = token[:PREFIX_DISPLAY_LENGTH]
+    for connector in ConnectorRepository(db).find_by_prefix(prefix):
+        try:
+            resolved = resolve(token, [connector])
+        except UnauthenticatedError:
+            continue
+        connector.last_active_at = utcnow()
+        db.commit()
+        return resolved.principal
+    raise UnauthenticatedError("Invalid connector credential.")
 
 
 def resolve_access(
@@ -70,6 +116,7 @@ def resolve_access(
     workspace_id: uuid.UUID,
     *,
     required_scopes: tuple[str, ...] = (),
+    project_id: uuid.UUID | None = None,
 ) -> WorkspaceAccess:
     workspace = WorkspaceRepository(db).get(workspace_id)
     if workspace is None:
@@ -84,34 +131,42 @@ def resolve_access(
         )
         raise NotFoundError("Workspace not found.")
 
-    member = WorkspaceMemberRepository(db).membership(workspace_id, actor.actor_id)
-    if member is None:
-        from ume_app.services.audit import record_denial
+    # A connector is bound to its workspace by the credential itself and has no
+    # membership row; a user must be a member. Both failures answer 404 so
+    # neither leaks whether the workspace exists.
+    if actor.actor_type == ActorType.CONNECTOR:
+        if actor.workspace_id != workspace_id:
+            raise NotFoundError("Workspace not found.")
+        _require_connector_project(actor, project_id)
+        principal = actor
+        role = None
+    else:
+        member = WorkspaceMemberRepository(db).membership(workspace_id, actor.actor_id)
+        if member is None:
+            from ume_app.services.audit import record_denial
 
-        record_denial(
-            actor,
-            action="workspace.access",
-            resource_type="workspace",
-            resource_id=workspace_id,
-            reason="not_a_member",
+            record_denial(
+                actor,
+                action="workspace.access",
+                resource_type="workspace",
+                resource_id=workspace_id,
+                reason="not_a_member",
+            )
+            # Same answer as "no such workspace" — see module docstring.
+            raise NotFoundError("Workspace not found.")
+        try:
+            role = WorkspaceRole(member.role)
+        except ValueError as exc:
+            raise PermissionDeniedError("当前主体无权访问该资源") from exc
+        principal = Principal(
+            actor_type=actor.actor_type,
+            actor_id=actor.actor_id,
+            scopes=scopes_for_role(role),
+            workspace_id=workspace.id,
         )
-        # Same answer as "no such workspace" — see module docstring.
-        raise NotFoundError("Workspace not found.")
-
-    try:
-        role = WorkspaceRole(member.role)
-    except ValueError as exc:
-        raise PermissionDeniedError("当前主体无权访问该资源") from exc
 
     if workspace.status not in READABLE_WORKSPACE_STATUSES:
         raise WorkspaceArchivedError(f"Workspace is {workspace.status} and does not accept requests.")
-
-    principal = Principal(
-        actor_type=actor.actor_type,
-        actor_id=actor.actor_id,
-        scopes=scopes_for_role(role),
-        workspace_id=workspace.id,
-    )
 
     for scope in required_scopes:
         try:
@@ -130,6 +185,18 @@ def resolve_access(
             raise
 
     return WorkspaceAccess(db=db, workspace=workspace, role=role, principal=principal)
+
+
+def _require_connector_project(actor: Principal, project_id: uuid.UUID | None) -> None:
+    """A project-bound connector may not act outside its project.
+
+    A connector with no project binding is workspace-wide, which is a different
+    capability and is only granted by issuing a credential that way.
+    """
+    if actor.project_id is None:
+        return
+    if project_id is not None and actor.project_id != project_id:
+        raise PermissionDeniedError("当前主体无权访问该资源")
 
 
 def workspace_access(*required_scopes: str):
@@ -159,8 +226,9 @@ def workspace_query_access(*required_scopes: str):
         workspace_id: Annotated[uuid.UUID, Query()],
         db: Annotated[Session, Depends(get_db)],
         actor: Annotated[Principal, Depends(get_actor)],
+        project_id: Annotated[uuid.UUID | None, Query()] = None,
     ) -> WorkspaceAccess:
-        return resolve_access(db, actor, workspace_id, required_scopes=required_scopes)
+        return resolve_access(db, actor, workspace_id, required_scopes=required_scopes, project_id=project_id)
 
     return dependency
 
@@ -201,5 +269,11 @@ def require_owner(access: WorkspaceAccess) -> None:
 
 
 def require_at_least(access: WorkspaceAccess, minimum: WorkspaceRole) -> None:
-    if not role_at_least(access.role, minimum):
+    """Role gate for workspace administration.
+
+    A connector has no role, so every administrative check fails for one — the
+    `workspace:manage` / `connector:manage` scopes are simply not grantable to
+    a connector in the first place.
+    """
+    if access.role is None or not role_at_least(access.role, minimum):
         raise PermissionDeniedError("当前主体无权访问该资源")

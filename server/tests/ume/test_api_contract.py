@@ -59,6 +59,11 @@ EXPECTED_ROUTES = {
     ("DELETE", "/graph/edges/{edge_id}"),
     ("GET", "/timeline"),
     ("POST", "/context"),
+    ("GET", "/connectors"),
+    ("POST", "/connectors"),
+    ("GET", "/connectors/{connector_id}"),
+    ("PATCH", "/connectors/{connector_id}"),
+    ("POST", "/connectors/{connector_id}/revoke"),
 }
 
 

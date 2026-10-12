@@ -207,9 +207,8 @@ def engine():
     Lives here rather than in `fake_engine.py` because pytest only discovers
     fixtures from conftest.py.
     """
-    from ume_app.engine.memory_adapter import set_adapter
-
     from fake_engine import FakeEngine
+    from ume_app.engine.memory_adapter import set_adapter
 
     fake = FakeEngine()
     set_adapter(fake)

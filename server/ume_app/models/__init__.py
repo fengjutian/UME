@@ -6,6 +6,7 @@ the Alembic environment already targets.
 
 from ume_app.models.audit import AuditEvent
 from ume_app.models.base import Base, JSONBType, as_utc, new_uuid, utcnow
+from ume_app.models.connector import Connector
 from ume_app.models.conversation import Conversation, Message
 from ume_app.models.graph import MemoryEdge
 from ume_app.models.import_job import IdempotencyKey, ImportJob
@@ -21,6 +22,7 @@ from ume_app.models.workspace import Workspace, WorkspaceMember
 __all__ = [
     "AuditEvent",
     "Base",
+    "Connector",
     "Conversation",
     "IdempotencyKey",
     "ImportJob",
