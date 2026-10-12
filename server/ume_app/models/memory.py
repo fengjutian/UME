@@ -112,6 +112,14 @@ class MemoryVersion(Base):
     )
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The column is `metadata` in the database and was renamed in Python only:
+    # `metadata` is reserved on a declarative class, so the attribute needs the
+    # explicit name. Migration 011 already created `ume_memory_versions.metadata`,
+    # and a published migration is not edited, so the mapping points at the
+    # existing column rather than the other way round.
+    # `metadata` is reserved on a declarative class, so this column is never called
+    # that. Migration 011 created it as `metadata` and 014 renamed it to match;
+    # see 014_rename_memory_versions_metadata.py for what the mismatch broke.
     extra_metadata: Mapped[dict] = mapped_column(JSONBType, nullable=False, default=dict)
     change_type: Mapped[str] = mapped_column(String(32), nullable=False)
     change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

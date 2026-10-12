@@ -94,7 +94,11 @@ class TestRevisionChain:
 
     def test_chain_has_a_single_head(self, in_server_dir):
         script = ScriptDirectory.from_config(_config())
-        assert script.get_heads() == ["013"]
+        # Asserted against the highest-numbered revision rather than a literal,
+        # so adding the next migration does not leave a stale red test behind.
+        heads = script.get_heads()
+        assert len(heads) == 1, f"expected one head, got {heads}"
+        assert heads[0] == max(script.get_revisions("heads"), key=lambda r: int(r.revision)).revision
 
     def test_the_chain_is_linear_with_no_branches(self, in_server_dir):
         """Every UME migration extends the previous one.
@@ -306,6 +310,67 @@ class TestOfflineEdgeDDL:
     def test_is_additive(self, ddl):
         assert "ALTER TABLE" not in ddl
         assert "DROP TABLE" not in ddl
+
+
+class TestModelsMatchTheMigrations:
+    """Every mapped column must exist under the name the migration gave it.
+
+    `conftest.py` builds the SQLite test schema with `Base.metadata.create_all`,
+    which creates tables *from the models*. Any model that disagrees with its
+    migration is therefore invisible to every other test in this suite — the
+    only place both artefacts meet is a real migrated database.
+
+    That is how `MemoryVersion.extra_metadata` shipped pointing at a column named
+    `extra_metadata` while migration 011 had created `metadata`: every unit test
+    passed, and the first real write died with
+    `UndefinedColumn: column "extra_metadata" of relation "ume_memory_versions"
+    does not exist`.
+    """
+
+    @pytest.fixture
+    def migrated_columns(self, live_postgres):
+        from sqlalchemy import create_engine, inspect
+
+        command.upgrade(_config(TEST_DATABASE_URL), "head")
+
+        engine = create_engine(TEST_DATABASE_URL)
+        try:
+            inspector = inspect(engine)
+            return {
+                table: {column["name"] for column in inspector.get_columns(table)}
+                for table in inspector.get_table_names()
+                if table.startswith("ume_")
+            }
+        finally:
+            engine.dispose()
+
+    def test_every_mapped_column_exists_under_its_migrated_name(self, migrated_columns):
+        from ume_app.models.base import Base
+        import ume_app.models  # noqa: F401  (registers the UME tables)
+
+        mismatches = []
+        for table in Base.metadata.tables.values():
+            if not table.name.startswith("ume_"):
+                continue
+            migrated = migrated_columns.get(table.name)
+            if migrated is None:
+                mismatches.append(f"{table.name}: not created by any migration")
+                continue
+            for column in table.columns:
+                if column.name not in migrated:
+                    mismatches.append(f"{table.name}.{column.name} is not in the migrated schema")
+
+        assert not mismatches, "model/migration drift: " + "; ".join(sorted(mismatches))
+
+    def test_the_version_metadata_column_is_the_migrated_name(self, migrated_columns):
+        """Named explicitly so the failure names the column, not just the table.
+
+        `metadata` is what 011 created and 014 renamed; a mapping back onto that
+        name also makes `row_to_dict` resolve `row.metadata` to SQLAlchemy's
+        MetaData and blow the JSON encoder up with a RecursionError.
+        """
+        assert "extra_metadata" in migrated_columns["ume_memory_versions"]
+        assert "metadata" not in migrated_columns["ume_memory_versions"]
 
 
 @requires_postgres
