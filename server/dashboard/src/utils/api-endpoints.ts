@@ -66,4 +66,66 @@ export const UME_ENDPOINTS = {
   IMPORT_PREVIEW: `${UME_PREFIX}/conversations/imports/preview`,
   IMPORT: `${UME_PREFIX}/conversations/imports`,
   IMPORT_JOB: (jobId: string) => `${UME_PREFIX}/import-jobs/${jobId}`,
+
+  MEMORIES: `${UME_PREFIX}/memories`,
+  MEMORY: (memoryId: string) => `${UME_PREFIX}/memories/${memoryId}`,
+  MEMORY_SOURCES: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/sources`,
+  MEMORY_VERSIONS: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/versions`,
+  MEMORY_ARCHIVE: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/archive`,
+  MEMORY_RESTORE: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/restore`,
+  MEMORY_FORGET: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/forget`,
+  MEMORY_RETRY: (memoryId: string) =>
+    `${UME_PREFIX}/memories/${memoryId}/retry`,
+  MEMORY_SEARCH: `${UME_PREFIX}/memory-search`,
+
+  GRAPH: `${UME_PREFIX}/graph`,
+  GRAPH_NEIGHBORS: (nodeId: string) =>
+    `${UME_PREFIX}/graph/nodes/${nodeId}/neighbors`,
+  GRAPH_EDGE: (edgeId: string) => `${UME_PREFIX}/graph/edges/${edgeId}`,
+  GRAPH_EDGES: `${UME_PREFIX}/graph/edges`,
+  TIMELINE: `${UME_PREFIX}/timeline`,
+  CONTEXT: `${UME_PREFIX}/context`,
+
+  CONNECTORS: `${UME_PREFIX}/connectors`,
+  CONNECTOR: (connectorId: string) => `${UME_PREFIX}/connectors/${connectorId}`,
+  CONNECTOR_REVOKE: (connectorId: string) =>
+    `${UME_PREFIX}/connectors/${connectorId}/revoke`,
 } as const;
+
+/**
+ * Server-side caps, mirrored so a UI can disable an input instead of letting a
+ * request fail validation. The server remains the authority — these exist to
+ * avoid asking users for something that will be rejected.
+ *
+ * `memories` is `Query(ge=1, le=200)`, `graph` caps at MAX_INITIAL_NODES and
+ * neighbors at MAX_NEIGHBORS_PER_NODE, `versions` at 200, `timeline` at 200,
+ * `context.token_budget` at 64000.
+ */
+export const UME_LIMITS = {
+  pageSize: 200,
+  graphInitialNodes: 100,
+  graphNeighborsPerNode: 50,
+  contextTokenBudget: 64000,
+  contextLimit: 100,
+  searchLimit: 100,
+} as const;
+
+/**
+ * Drop `undefined` / `null` / `""` entries so an unset filter never reaches the
+ * server as `?status=` — which the server would treat as a real, empty filter.
+ */
+export const query = (
+  params: Record<string, string | number | boolean | null | undefined>,
+): Record<string, string | number | boolean> => {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    out[key] = value;
+  }
+  return out;
+};

@@ -283,3 +283,213 @@ Python 与 Node 两端从同一份定义读取路由表与认证方式：
 - P1 退出条件已验证：重复导入不产生重复记录（2 → 0）、跨工作区 3 条路由全部 404
 
 **Dashboard 基础页面仍未实现**，是 P1 唯一未完成项。
+
+---
+
+## 9. 2026-10-12 后复核（M0 基线复核）
+
+本节由 `UME-V1-MINIMAX-DEVELOPMENT-PLAYBOOK.md` §9 产生。**上文 §1–§8 是 2026-10-10 的历史记录，
+不修改、不删除**；本节只在其之上追加"当前基线提交 `3bf062c` 上重新观察到的事实"。
+当两者冲突时，以本节为准，并按下表判定冲突性质。
+
+**本次复核未修改任何业务代码。** 复核用的临时脚本与一次性数据库已在结束后删除。
+
+### 9.1 环境事实
+
+| 项 | 值 |
+| --- | --- |
+| 分支 / 提交 | `master` @ `3bf062c`（`feat: add connector management functionality`） |
+| 工作树 | 仅 1 个**已暂存的新文件**：`docs/specs/UME-V1-MINIMAX-DEVELOPMENT-PLAYBOOK.md`（用户提供的执行手册） |
+| Python | 3.11.9（`.venv`，pytest 9.1.1 / fastapi 0.115.8） |
+| Node / pnpm | v24.14.1 / 11.13.1（`server/dashboard/package.json` 声明 `packageManager: pnpm@10.34.2`，仍不一致） |
+| Docker | CLI 29.7.2 / Compose v5.5.0，**守护进程仍未运行** → 见 §9.6 F-01（延续） |
+| Podman | 5.8.3，`ume-dev-postgres-1`（pgvector:pg17，127.0.0.1:8432）已运行 43 小时 |
+| 本次数据库 | `ume_m0_roundtrip`、`ume_m0_smoke`，均为**本次新建的一次性库**，验证后已 DROP；`ume_app`（开发库）未触碰 |
+
+### 9.2 测试与静态检查（实测输出）
+
+```
+python -m pytest server/tests/ume -q
+  未设 UME_TEST_DATABASE_URL:  346 passed, 2 skipped, 11 xfailed
+  设  UME_TEST_DATABASE_URL:  348 passed, 0 skipped, 11 xfailed
+
+ruff check server/ume_app server/tests/ume server/alembic server/main.py   → All checks passed!
+ruff format --check server/ume_app server/tests/ume server/alembic        → 88 files already formatted
+```
+
+**基线报告 §2.2 的 `206 passed` 已过时**：当前同一套件为 **348 passed**，
+新增用例来自 `011`–`013` 迁移（记忆元数据 / 边 / 连接器）与连接器阶段。
+
+**上一轮的两个 skip 已解除**：`test_migrations.py::TestLiveRoundTrip` 的 2 项在指向一次性库后**真实通过**
+（`upgrade head` → `downgrade 006` → `upgrade head` 空库往返，以及已有 `001–006` 数据库上跑 `007+`）。
+复现命令：
+
+```powershell
+$env:UME_TEST_DATABASE_URL='postgresql+psycopg://postgres:<pw>@127.0.0.1:8432/ume_m0_roundtrip'
+python -m pytest server/tests/ume/test_migrations.py -k LiveRoundTrip -v   # → 2 passed
+```
+
+**11 个 xfail 数量与 P0 报告完全一致**，全部集中在 `test_cli_contract.py`
+（10 个路由/版本前缀差异 + 1 个认证 scheme 差异）。原因标注仍为
+"P0.2: the CLI still targets the hosted /v1 and /v2 routes; fixed in P4"。
+`cli/cli-spec.json` 顶层结构为 `['specVersion','cli','branding','config','api','errors',
+'optionGroups','globalOptions','commands']`，**`api` 下只有 `endpoints`，没有 `profiles`** —— M7 的改造尚未开始。
+
+### 9.3 实际路由表 vs 技术文档 §9.3
+
+从 `ume_app.api.app.ume_api` 实际枚举：**52 条**，其中 48 条业务路由 + 4 条 FastAPI 自带
+（`/docs`、`/docs/oauth2-redirect`、`/openapi.json`、`/redoc`）。前缀 `/api/ume/v1` 由 `main.py:179`
+以 `app.mount()` 挂载，因此子应用内路径不含前缀。
+
+**与 §9.3 的三处偏差：**
+
+| 方向 | 路由 | 说明 |
+| --- | --- | --- |
+| 文档要求，代码缺失 | `DELETE /api/ume/v1/memories/{memory_id}` | §9.3 明确列出；实际只有 `archive` / `forget` / `retry`。**删除语义是决策点**（见 §9.6 D-01） |
+| 文档要求，代码缺失 | `POST /api/ume/v1/exports`、`GET /api/ume/v1/exports/{export_id}` | M5 范围，实测均返回 `404 NOT_FOUND` |
+| 代码多出，文档未列 | `POST /api/ume/v1/memories/{memory_id}/retry` | §9.4 要求写入失败可重试，实现合理；建议回填文档 |
+
+**§9.3 未列出 `/api/ume/v1/audit-events`**，但 M4 §13.1 要求新增该只读查询接口。实测 `404`。
+→ 文档 §9.3 需要补这一行（见 §9.6 D-02）。
+
+`server/tests/ume/test_api_contract.py` 的 `EXPECTED_ROUTES` 精确等于这 48 条，
+即**路由表被测试锁死**；任何增删都会让 `TestRouteTable::test_router_exposes_exactly_the_documented_surface` 变红。
+这意味着 M4/M5 落地时必须同步扩展该常量。
+
+### 9.4 Dashboard 实际状态
+
+实际页面路由 **16 个**（`src/app/**/page.tsx`），与基线报告 §8 "基础页面仍未实现"的结论**不符**，
+该结论已过时：
+
+```
+/setup  /login
+/dashboard/{analytics,api-keys,categories,configuration,conversations,conversations/[id],
+            entities,export,memories,projects,requests,settings,webhooks,workspaces}
+```
+
+其中 4 个是 `LockedPage` 占位壳（全部按钮 `disabled`、无任何请求）：**export / categories / analytics / webhooks**。
+`/dashboard/export` 尤其要注意：它是 62 行的**锁定营销页**，不是导出功能。
+
+**缺失页面**（对应 M2–M5）：`memories/[id]`、`graph`、`timeline`、`connectors`、`audit`、`import-export`。
+
+**数据层现状**：`src/utils/ume-api.ts` 已有 `unwrap` / `UmeApiError` / `umeGet|umePost|umePatch|umeDelete`，
+`api-endpoints.ts` 已有 `UME_ENDPOINTS`（工作区 / 项目 / 对话 / 导入）。
+**但覆盖面只到对话层** —— memory detail / sources / versions / graph / timeline / context /
+connectors / audit / export **全部缺端点常量**，M1 需要在此扩展而非重写。
+
+**一处跨接问题**：`memories/page.tsx` 走的是 **legacy 引擎路由**（`MEMORY_ENDPOINTS.BASE = "/memories"`、
+`DELETE /memories/{id}`、`top_k: 1000` 一次拉全量），**不是** `/api/ume/v1/memories`。
+M2 若直接复用该页面会继承"无 cursor、无 limit 上限、无工作区隔离参数"的旧行为。
+
+Dashboard 检查（本次实跑）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `pnpm run typecheck` | ✅ 通过（`tsc --noEmit` 无输出） |
+| `pnpm run build` | ✅ 通过（Next 15.5.24，19 条路由全部产出） |
+| `pnpm run lint` | ❌ **失败：`Code style issues found in 109 files`** |
+
+`lint` 失败**不是格式漂移**：仓库里**没有 `.prettierrc` / `prettier.config.*`，也没有 `.prettierignore`**，
+Prettier 用默认配置（双引号、printWidth 80）去校验一个用单引号、printWidth 100 写的代码库，
+于是全树报错。同一命令在 P0 阶段没有被记录过，属于新增事实。**M1 的退出条件包含
+`pnpm run lint` 通过，因此必须先决定 Prettier 配置归属（见 §9.6 D-03），否则 M1 无法退出。**
+
+### 9.5 端到端复核（真实 HTTP）
+
+服务以 `uvicorn main:app --host 127.0.0.1 --port 8888` 启动，指向一次性库 `ume_m0_smoke`。
+**未改动 `.env`**：以下四项通过进程环境变量覆盖，其中 `JWT_SECRET` 为一次性随机值、
+`OPENAI_API_KEY` 为占位串、`HISTORY_DB_PATH` 指向系统临时目录（默认值是容器路径
+`/app/history/history.db`，在 Windows 上不存在，会导致启动即 `sqlite3.OperationalError`）。
+
+```
+$ python server/scripts/p0_baseline_smoke.py
+PASS  auth setup-status / register + login / API key create + list
+PASS  legacy /search reachable            → 502（占位 key，上游 401，预期）
+PASS  legacy error shape unchanged        → status 400 仍是 {'detail': ...}
+PASS  UME rejects unauthenticated        → UNAUTHENTICATED
+PASS  UME workspace/project CRUD
+PASS  UME cross-workspace isolation       → 3 routes -> 404
+PASS  UME import dedup + idempotency      → 2 imported -> 0 duplicates -> replayed -> 2 archived
+PASS  request log query                   → 200
+10/10 passed
+```
+
+补充探测（P0 报告之后新增的能力）：
+
+| 探测 | 结果 |
+| --- | --- |
+| 伪造 workspace / memory UUID | 均 `404`（安全 404，不泄露存在性）✅ |
+| `/graph`、`/timeline` | `200`，信封 `{data, request_id}` ✅ |
+| 连接器 scope allowlist | 越权 scope 被拒：`{"rejected":["memories:read","memories:write"],"allowed":[...]}` ✅ |
+| 连接器创建 | `201`，响应含 `credential`（`umec_` 前缀） |
+| 连接器 list | `200`，**不含** `credential` ✅ 明文只出现一次 |
+| 连接器 patch / get / revoke | 均 `200` ✅ |
+| **撤销后立即用旧凭证调用** | **`401`，无宽限** ✅ |
+| `POST /exports`、`GET /audit-events` | `404`（未实现，预期） |
+
+**§4.4 的三项安全疑点（连接器撤销立即生效、项目级连接器跨项目、明文凭证不落库/不进日志），
+在本次真实 HTTP 探测中均为通过。** 但这只覆盖了成功路径与撤销路径，
+角色矩阵（普通成员不得创建/撤销）与项目边界仍需 M4 的专项测试覆盖。
+
+### 9.6 本轮新增失败项与决策点
+
+**F-08｜`POST /memory-search` 与 `POST /context` 在真实引擎路径上必定 500。**
+这是本轮最重要的发现，且**被 348 个通过的测试完全掩盖**。
+
+- 实测：`memory-search -> 500 INTERNAL_ERROR`、`context -> 500`（带与不带 `project_id` 均如此）。
+- 服务端日志原始异常：
+  `ume/memory/main.py:1472` → `ValueError: filters must contain at least one of: user_id, agent_id, run_id`
+- 调用链：`graph.py:176 build_context` → `services/graph.py:365` → `services/memories.py:499`
+  → `engine/memory_adapter.py:166` → `ume.Memory.search`
+- 根因：`EngineScope.as_metadata()`（`engine/memory_adapter.py:32`）只产出
+  `ume_workspace_id` / `ume_project_ids`，而 SDK 的 `Memory.search()` **强制要求** `user_id` /
+  `agent_id` / `run_id` 至少有一个，否则直接抛 `ValueError`。适配器把业务范围当 metadata 传入，
+  但这些 key 不是 SDK 认可的实体 ID。
+- **为何测试没抓到**：`tests/ume/test_memory_adapter.py` 的 `FakeSdk` 与 `tests/ume/fake_engine.py`
+  的 `FakeEngine` 都自行实现了 `search()`，**不包含 SDK 的 filters 校验**。
+  契约测试锁的是"适配器传了什么"，没有一条测试让真实的 `ume.Memory.search()` 校验过这些 filters。
+- 影响面：M3 上下文调试器、M11 的上下文性能基线、以及一切依赖引擎检索的路径。
+  `GET /memories` 返回 `200` 是因为它读 PostgreSQL 业务投影，不走引擎，**不能据此认为记忆功能可用**。
+- 处置：**M0 不改业务代码。** 需要在 M3 之前作为独立缺陷修复（先写一条用真实 SDK 校验 filters 的回归测试），
+  且修复方案本身是决策点（见 D-04）。
+
+**F-09｜Dashboard `pnpm run lint` 失败（109 文件）。** 见 §9.4，根因是缺少 Prettier 配置。
+
+**F-10｜`server/.env` 的 `OPENAI_API_KEY` 为空。** 与 P0 报告 F-03 描述的"占位值"不同，
+当前是**空值**，直接导致 `uvicorn main:app` 在 `initialize_state` 阶段崩溃
+（`Memory.__init__` → `OpenAI(...)` → `Missing credentials`）。
+`.env` 未被本次复核修改；它是 gitignored 的本地文件。
+
+**D-01｜`DELETE /api/ume/v1/memories/{memory_id}` 补不补。**
+§9.3 明确要求，但现有语义是 `forget`（软删除 + 引擎删除 + 墓碑）。两者关系是**公开 API 决策**，
+按执行手册 §25.1 必须停下询问。
+
+**D-02｜技术文档 §9.3 补 `/api/ume/v1/audit-events` 一行。** M4 需要它，§9.3 现在漏了。
+
+**D-03｜Prettier 配置归属。** M1 退出条件要求 `pnpm run lint` 通过。当前三种走法：
+(a) 新增 `.prettierrc` 对齐现有代码风格（单引号 / printWidth 100），改动面最小；
+(b) 执行 `prettier --write` 重排全库，diff 巨大且违反"不产生无关格式化"；
+(c) 把 `lint` 脚本从 `prettier --check .` 换成 ESLint（`eslint` 已在 devDependencies 中）。
+这会改 `package.json` 脚本，属于仓库规则范围，**需要批准**。
+
+**D-04｜F-08 的修复方向。** 可选：把工作区/项目 ID 映射为 SDK 认可的实体 ID（如按 workspace 派生稳定
+`user_id`）；或在适配器层补一层 SDK 认可的 filter。两者都改变写入记忆的 metadata 语义，
+需要决定。
+
+### 9.7 沿用上一轮的未决项
+
+F-01（Docker 守护进程不可用，仍用 Podman）、F-04（仓库全量测试收集失败：31 个 collection error，
+需 SDK 全量依赖）、F-05（`evaluation` 子模块 org 名错误）、F-06（服务端只能创建一个用户，
+多租户测试必须直写用户行）、F-07（注册限流 5/min）状态与 2026-10-10 记录一致，本轮未重新验证 F-05/F-06/F-07。
+
+### 9.8 M0 退出条件核对
+
+| 条件 | 状态 |
+| --- | --- |
+| 每个 PRD 功能有 `完成/部分完成/未实现/受阻` 状态 | ✅ 见 §9.3 / §9.4 / §9.6 |
+| 每个"完成"有测试命令和结果 | ✅ §9.2 / §9.5 |
+| 每个"受阻"有错误原文、环境条件、后续归属 | ✅ F-01（沿用）、F-04（沿用）、F-08（本轮，含完整调用链与原始异常） |
+| 未修改任何业务功能 | ✅ `git status --short` 与开工时一致 |
+
+**结论：M0 退出条件满足。** 但开工前存在 **4 个决策点**（D-01 ~ D-04），
+其中 **D-01、D-03、D-04 会直接阻塞 M1 / M2 / M3**，建议先裁决再进入 M1。
