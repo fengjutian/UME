@@ -1,277 +1,179 @@
 "use client";
 
-import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
-import { DataTable } from "@/components/shared/data-table";
-import { TableSkeleton } from "@/components/shared/table-skeleton";
-import { EmptyState } from "@/components/self-hosted/empty-state";
-import DeleteConfirmationModal from "@/components/ui/delete-confirmation-modal";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import { UpgradeBanner } from "@/components/self-hosted/upgrade-banner";
-import { toast } from "@/components/ui/use-toast";
-import { getErrorMessage } from "@/lib/error-message";
-import { api } from "@/utils/api";
-import { MEMORY_ENDPOINTS } from "@/utils/api-endpoints";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { UmeState } from "@/components/shared/ume-state";
+import { UME_ENDPOINTS, UME_LIMITS } from "@/utils/api-endpoints";
+import { umeGet, listMemories } from "@/utils/ume-api";
+import type { UmePage } from "@/utils/ume-api";
 import { useApiQuery } from "@/hooks/use-api-query";
-import { Memory } from "@/types/api";
+import { useUmePage } from "@/hooks/use-ume-page";
+import type { UmeMemory, UmeWorkspace } from "@/types/ume";
 
-const PAGE_SIZE = 20;
-// Keep in sync with ALL_MEMORIES_LIMIT in server/main.py.
-const MEMORY_FETCH_LIMIT = 1000;
-
+/**
+ * Reads `/api/ume/v1/memories`, not the legacy engine `/memories`.
+ *
+ * The two return different identifiers — the engine id and the UME memory
+ * record id — so a list built on one cannot link into a detail page built on the
+ * other. It also means this page inherits the workspace filter and cursor
+ * pagination the legacy route never had, instead of pulling `top_k: 1000` in
+ * one shot.
+ */
 export default function MemoriesPage() {
-  const [userId, setUserId] = useState("");
-  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
-  const [memoryToDelete, setMemoryToDelete] = useState<Memory | null>(null);
-  const [page, setPage] = useState(0);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const [workspaceId, setWorkspaceId] = useState<string>("");
+  const [status, setStatus] = useState<string>("");
+
+  const { data: workspacePage, isLoading: loadingWorkspaces } = useApiQuery<
+    UmePage<UmeWorkspace>
+  >(() => umeGet(UME_ENDPOINTS.WORKSPACES, { limit: 100 }));
+
+  const workspaces = useMemo(() => workspacePage?.items ?? [], [workspacePage]);
+  const activeWorkspaceId = workspaceId || workspaces[0]?.id || "";
+
+  const filters = useMemo(
+    () => ({ workspace_id: activeWorkspaceId, status }),
+    [activeWorkspaceId, status],
+  );
 
   const {
-    data: memories = [],
+    items: memories,
     isLoading,
-    refetch,
-  } = useApiQuery<Memory[]>(
-    async () => {
-      const params = userId.trim()
-        ? { user_id: userId.trim(), top_k: MEMORY_FETCH_LIMIT }
-        : { top_k: MEMORY_FETCH_LIMIT };
-      const res = await api.get(MEMORY_ENDPOINTS.BASE, { params });
-      const raw = res.data?.results ?? res.data ?? [];
-      return Array.isArray(raw) ? raw : [];
-    },
-    { errorToast: "Failed to load memories", initialData: [] },
-  );
-
-  const totalPages = Math.ceil(memories.length / PAGE_SIZE);
-  const paginatedMemories = memories.slice(
-    page * PAGE_SIZE,
-    (page + 1) * PAGE_SIZE,
-  );
-
-  const handleDelete = async () => {
-    if (!memoryToDelete) return;
-    try {
-      await api.delete(MEMORY_ENDPOINTS.BY_ID(memoryToDelete.id));
-      toast({ title: "Memory deleted", variant: "success" });
-      if (selectedMemory?.id === memoryToDelete.id) setSelectedMemory(null);
-      setMemoryToDelete(null);
-      void refetch();
-    } catch (error) {
-      toast({
-        title: "Failed to delete memory",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
-    }
-  };
-
-  const columns = [
-    {
-      key: "memory" as keyof Memory,
-      label: "Content",
-      width: 400,
-      render: (value: string) => (
-        <span className="line-clamp-2 text-sm">{value}</span>
-      ),
-    },
-    { key: "user_id" as keyof Memory, label: "User", width: 100 },
-    { key: "agent_id" as keyof Memory, label: "Agent", width: 100 },
-    {
-      key: "created_at" as keyof Memory,
-      label: "Created",
-      width: 120,
-      render: (value: string) =>
-        value ? format(new Date(value), "MMM d, yyyy") : "--",
-    },
-  ];
+    isLoadingMore,
+    error,
+    hasMore,
+    loadMore,
+    retry,
+  } = useUmePage<UmeMemory>(UME_ENDPOINTS.MEMORIES, {
+    filters,
+    limit: UME_LIMITS.pageSize,
+    enabled: Boolean(activeWorkspaceId),
+  });
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold font-fustat">Memories</h1>
 
-      {memories.length >= MEMORY_FETCH_LIMIT && (
-        <UpgradeBanner
-          id="memories-1k"
-          message="1,000+ memories stored. Categories can help organize them."
-          ctaLabel="Explore Cloud"
-          ctaUrl="https://app.ume.ai?utm_source=oss&utm_medium=dashboard-memories"
-          variant="cloud"
-        />
-      )}
+      <Card>
+        <CardContent className="flex flex-wrap items-end gap-4 pt-6">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="memory-workspace">Workspace</Label>
+            <Select value={activeWorkspaceId} onValueChange={setWorkspaceId}>
+              <SelectTrigger id="memory-workspace" className="w-72">
+                <SelectValue placeholder="Select a workspace" />
+              </SelectTrigger>
+              <SelectContent>
+                {workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {workspace.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      <div className="flex gap-3">
-        <Input
-          placeholder="Filter by User ID (optional)"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              setPage(0);
-              refetch();
-            }
-          }}
-          className="w-64"
-        />
-      </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="memory-status">Status</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger id="memory-status" className="w-40">
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      {isLoading ? (
-        <TableSkeleton rows={5} columns={4} />
-      ) : memories.length === 0 ? (
-        <EmptyState
-          title="No memories yet"
-          description="Create your first memory by sending a POST /memories request."
+      {!loadingWorkspaces && workspaces.length === 0 ? (
+        <UmeState
+          isLoading={false}
+          error={null}
+          isEmpty
+          emptyTitle="No workspaces yet"
+          description="Create a workspace before listing memories."
         >
-          <pre className="text-xs text-left bg-surface-default-secondary p-3 rounded font-mono overflow-x-auto mt-3 max-w-lg">
-            {`curl -X POST ${apiUrl}/memories \\
-  -H "X-API-Key: <your-key>" \\
-  -H "Content-Type: application/json" \\
-  -d '{"messages": [{"role": "user", "content": "I like hiking"}], "user_id": "alice"}'`}
-          </pre>
-          <a
-            href="https://docs.ume.ai/open-source/features/rest-api#memory-operations"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-onSurface-default-tertiary underline underline-offset-4 hover:text-onSurface-default-primary mt-2"
-          >
-            REST API reference
-          </a>
-        </EmptyState>
+          <span />
+        </UmeState>
       ) : (
-        <>
-          <Card className="border-memBorder-primary overflow-hidden">
-            <DataTable
-              data={paginatedMemories}
-              columns={columns}
-              getRowKey={(row) => row.id}
-              onRowClick={(row) => setSelectedMemory(row)}
-              getRowClassName={(row) =>
-                selectedMemory?.id === row.id
-                  ? "bg-surface-default-tertiary"
-                  : undefined
-              }
-            />
-          </Card>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm text-onSurface-default-tertiary">
-              <span>
-                {page * PAGE_SIZE + 1}–
-                {Math.min((page + 1) * PAGE_SIZE, memories.length)} of{" "}
-                {memories.length}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages - 1}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+        <UmeState
+          isLoading={isLoading || loadingWorkspaces}
+          error={error}
+          isEmpty={memories.length === 0}
+          onRetry={retry}
+          emptyTitle="No memories"
+          description={
+            status
+              ? "No memories match this status filter."
+              : "This workspace has no memories yet."
+          }
+          loadingRows={6}
+        >
+          <Card>
+            <CardContent className="pt-6">
+              <ul className="flex flex-col divide-y">
+                {memories.map((memory) => (
+                  <li key={memory.id} className="flex items-start gap-3 py-3">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <p className="line-clamp-2 text-sm">
+                        {memory.current_text}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-onSurface-default-tertiary">
+                        <Badge variant="outline">{memory.memory_type}</Badge>
+                        <Badge variant="outline">{memory.status}</Badge>
+                        {memory.engine_state !== "ready" && (
+                          <Badge variant="destructive">
+                            engine: {memory.engine_state}
+                          </Badge>
+                        )}
+                        <span>
+                          {format(
+                            new Date(memory.updated_at),
+                            "MMM d, yyyy HH:mm",
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/dashboard/memories/${memory.id}`}>
+                        Open
+                        <ExternalLink className="size-3.5" />
+                      </Link>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
 
-      <Sheet
-        open={!!selectedMemory}
-        onOpenChange={(open) => {
-          if (!open) setSelectedMemory(null);
-        }}
-      >
-        <SheetContent className="sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Memory Detail</SheetTitle>
-            <SheetDescription className="sr-only">
-              View memory content and metadata
-            </SheetDescription>
-          </SheetHeader>
-          {selectedMemory && (
-            <div className="mt-6 space-y-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-onSurface-default-tertiary">
-                  Content
-                </Label>
-                <p className="text-sm">{selectedMemory.memory}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs text-onSurface-default-tertiary">
-                    ID
-                  </Label>
-                  <p className="text-xs font-mono break-all">
-                    {selectedMemory.id}
-                  </p>
+              {hasMore && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoadingMore}
+                    onClick={loadMore}
+                  >
+                    {isLoadingMore ? "Loading…" : "Load more"}
+                  </Button>
                 </div>
-                {selectedMemory.user_id && (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-onSurface-default-tertiary">
-                      User
-                    </Label>
-                    <p className="text-sm">{selectedMemory.user_id}</p>
-                  </div>
-                )}
-                {selectedMemory.agent_id && (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-onSurface-default-tertiary">
-                      Agent
-                    </Label>
-                    <p className="text-sm">{selectedMemory.agent_id}</p>
-                  </div>
-                )}
-                {selectedMemory.created_at && (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-onSurface-default-tertiary">
-                      Created
-                    </Label>
-                    <p className="text-sm">
-                      {new Date(selectedMemory.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-onSurface-danger-primary"
-                onClick={() => setMemoryToDelete(selectedMemory)}
-              >
-                <Trash2 className="size-3.5 mr-1" />
-                Delete memory
-              </Button>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      <DeleteConfirmationModal
-        isOpen={!!memoryToDelete}
-        onClose={() => setMemoryToDelete(null)}
-        onConfirm={handleDelete}
-        title="Delete memory"
-        description="This memory will be permanently removed. This cannot be undone."
-        itemName={memoryToDelete?.id ?? ""}
-        confirmButtonText="Delete"
-      />
+              )}
+            </CardContent>
+          </Card>
+        </UmeState>
+      )}
     </div>
   );
 }

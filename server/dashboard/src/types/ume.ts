@@ -108,6 +108,11 @@ export interface UmeImportJob {
  * server is the source of truth for both and a new state there must not
  * become a type error here. Narrow at the call site after you have handled
  * the unknown case.
+ *
+ * The values the server actually emits today, for reference
+ * (`ume_app/domain/enums.py`):
+ *   status:       active | archived | deleted
+ *   engine_state: pending | ready | failed | deleting | deleted
  */
 export interface UmeMemory {
   id: string;

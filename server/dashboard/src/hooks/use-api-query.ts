@@ -6,6 +6,12 @@ interface UseApiQueryOptions<T> {
   enabled?: boolean;
   errorToast?: string;
   initialData?: T;
+  /**
+   * Bump to re-run the fetcher. Additive so existing call sites are unaffected:
+   * a page that mutates something and needs the list re-read increments this
+   * instead of remounting the component (which loses scroll and selection).
+   */
+  refreshKey?: number;
 }
 
 interface UseApiQueryResult<T> {
@@ -19,7 +25,7 @@ export function useApiQuery<T>(
   fetcher: () => Promise<T>,
   options: UseApiQueryOptions<T> = {},
 ): UseApiQueryResult<T> {
-  const { enabled = true, errorToast, initialData } = options;
+  const { enabled = true, errorToast, initialData, refreshKey } = options;
 
   const [data, setData] = useState<T | undefined>(initialData);
   const [isLoading, setIsLoading] = useState(enabled);
@@ -50,7 +56,7 @@ export function useApiQuery<T>(
 
   useEffect(() => {
     if (enabled) void run();
-  }, [enabled, run]);
+  }, [enabled, refreshKey, run]);
 
   return { data, isLoading, error, refetch: run };
 }

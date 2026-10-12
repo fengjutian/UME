@@ -28,7 +28,9 @@ describe("query", () => {
   });
 
   it("keeps false, which is a meaningful value and not an absent one", () => {
-    expect(query({ include_deleted: false })).toEqual({ include_deleted: false });
+    expect(query({ include_deleted: false })).toEqual({
+      include_deleted: false,
+    });
   });
 
   it("keeps zero", () => {

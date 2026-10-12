@@ -28,7 +28,34 @@ const {
   unwrap,
 } = await import("@/utils/ume-api");
 
+/**
+ * `await import(...)` destructuring binds values, not the class declaration, so
+ * `UmeApiError` cannot be used as a type here. Alias the instance type instead.
+ */
+type UmeApiErrorInstance = InstanceType<typeof UmeApiError>;
+
 const ok = (data: unknown) => ({ data: { data, request_id: "req_1" } });
+
+/**
+ * Await a call that is expected to fail and hand back the error.
+ *
+ * `.catch(e => e as T)` would type as `T | Resolved`, so a resolved call would
+ * still typecheck and then blow up on the next property access. This fails the
+ * test instead, and says what came back.
+ */
+const rejectionOf = async (
+  call: Promise<unknown>,
+): Promise<UmeApiErrorInstance> => {
+  let resolvedWith: unknown;
+  try {
+    resolvedWith = await call;
+  } catch (caught) {
+    return caught as UmeApiErrorInstance;
+  }
+  throw new Error(
+    `expected the request to reject, but it resolved with ${JSON.stringify(resolvedWith)}`,
+  );
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -36,7 +63,9 @@ beforeEach(() => {
 
 describe("unwrap", () => {
   it("returns the payload of a success envelope", () => {
-    expect(unwrap<{ id: string }>({ data: { id: "m1" }, request_id: "r" })).toEqual({
+    expect(
+      unwrap<{ id: string }>({ data: { id: "m1" }, request_id: "r" }),
+    ).toEqual({
       id: "m1",
     });
   });
@@ -45,18 +74,24 @@ describe("unwrap", () => {
     // A failed request that resolves to `undefined` renders as "no data yet",
     // which is how a broken endpoint looks like an empty workspace.
     expect(() =>
-      unwrap({ error: { code: "NOT_FOUND", message: "gone", details: null }, request_id: "r" }),
+      unwrap({
+        error: { code: "NOT_FOUND", message: "gone", details: null },
+        request_id: "r",
+      }),
     ).toThrow(UmeApiError);
   });
 
   it("carries the server code and message onto the thrown error", () => {
     try {
-      unwrap({ error: { code: "PERMISSION_DENIED", message: "nope", details: null }, request_id: "r" });
+      unwrap({
+        error: { code: "PERMISSION_DENIED", message: "nope", details: null },
+        request_id: "r",
+      });
       expect.unreachable();
     } catch (error) {
       expect(error).toBeInstanceOf(UmeApiError);
-      expect((error as UmeApiError).code).toBe("PERMISSION_DENIED");
-      expect((error as UmeApiError).message).toBe("nope");
+      expect((error as UmeApiErrorInstance).code).toBe("PERMISSION_DENIED");
+      expect((error as UmeApiErrorInstance).message).toBe("nope");
     }
   });
 });
@@ -101,7 +136,7 @@ describe("error mapping", () => {
       details: null,
     });
 
-    const error = await listMemories({ workspace_id: "w1" }).catch((e) => e as UmeApiError);
+    const error = await rejectionOf(listMemories({ workspace_id: "w1" }));
     expect(error.isNotFound).toBe(true);
   });
 
@@ -114,13 +149,15 @@ describe("error mapping", () => {
       details: null,
     });
 
-    const error = await listMemories({ workspace_id: "w1" }).catch((e) => e as UmeApiError);
+    const error = await rejectionOf(listMemories({ workspace_id: "w1" }));
     expect(error.isNotFound).toBe(false);
   });
 
   it("falls back to a readable message when the body is not an error envelope", async () => {
     api.get.mockRejectedValue(new Error("Network Error"));
-    await expect(listMemories({ workspace_id: "w1" })).rejects.toThrow("Network Error");
+    await expect(listMemories({ workspace_id: "w1" })).rejects.toThrow(
+      "Network Error",
+    );
   });
 });
 
@@ -130,7 +167,9 @@ describe("request construction", () => {
     (call[1] as { params: Record<string, unknown> }).params;
 
   it("sends the workspace filter on the memories list", async () => {
-    api.get.mockResolvedValue(ok({ items: [], next_cursor: null, has_more: false }));
+    api.get.mockResolvedValue(
+      ok({ items: [], next_cursor: null, has_more: false }),
+    );
 
     await listMemories({ workspace_id: "w1", limit: 25, status: "ready" });
 
@@ -144,15 +183,23 @@ describe("request construction", () => {
   });
 
   it("omits an unset filter instead of sending it empty", async () => {
-    api.get.mockResolvedValue(ok({ items: [], next_cursor: null, has_more: false }));
+    api.get.mockResolvedValue(
+      ok({ items: [], next_cursor: null, has_more: false }),
+    );
 
-    await listMemories({ workspace_id: "w1", status: undefined, project_id: "" });
+    await listMemories({
+      workspace_id: "w1",
+      status: undefined,
+      project_id: "",
+    });
 
     expect(paramsOf(api.get.mock.calls[0])).toEqual({ workspace_id: "w1" });
   });
 
   it("defaults the graph window to the server's initial-node cap", async () => {
-    api.get.mockResolvedValue(ok({ nodes: [], edges: [], next_cursor: null, has_more: false }));
+    api.get.mockResolvedValue(
+      ok({ nodes: [], edges: [], next_cursor: null, has_more: false }),
+    );
 
     await loadGraph({ workspace_id: "w1" });
 
@@ -163,7 +210,9 @@ describe("request construction", () => {
   });
 
   it("passes the cursor through when paging", async () => {
-    api.get.mockResolvedValue(ok({ items: [], next_cursor: "c2", has_more: true }));
+    api.get.mockResolvedValue(
+      ok({ items: [], next_cursor: "c2", has_more: true }),
+    );
 
     await listMemories({ workspace_id: "w1", cursor: "c1" });
 
@@ -195,10 +244,21 @@ describe("request construction", () => {
 describe("buildContext", () => {
   it("returns the assembly when the budget is respected", async () => {
     api.post.mockResolvedValue(
-      ok({ query: "q", token_budget: 100, estimated_tokens: 42, items: [], dropped: [], summarized: false }),
+      ok({
+        query: "q",
+        token_budget: 100,
+        estimated_tokens: 42,
+        items: [],
+        dropped: [],
+        summarized: false,
+      }),
     );
 
-    const result = await buildContext({ workspace_id: "w1", query: "q", token_budget: 100 });
+    const result = await buildContext({
+      workspace_id: "w1",
+      query: "q",
+      token_budget: 100,
+    });
 
     expect(result.estimated_tokens).toBe(42);
   });
@@ -206,12 +266,19 @@ describe("buildContext", () => {
   it("throws when the server reports more tokens than the budget", async () => {
     // The page would otherwise render a budget that was visibly exceeded.
     api.post.mockResolvedValue(
-      ok({ query: "q", token_budget: 100, estimated_tokens: 180, items: [], dropped: [], summarized: false }),
+      ok({
+        query: "q",
+        token_budget: 100,
+        estimated_tokens: 180,
+        items: [],
+        dropped: [],
+        summarized: false,
+      }),
     );
 
-    await expect(buildContext({ workspace_id: "w1", query: "q", token_budget: 100 })).rejects.toThrow(
-      /180 tokens for a 100 budget/,
-    );
+    await expect(
+      buildContext({ workspace_id: "w1", query: "q", token_budget: 100 }),
+    ).rejects.toThrow(/180 tokens for a 100 budget/);
   });
 });
 
@@ -219,7 +286,11 @@ describe("connectors", () => {
   it("asks the server for a fresh credential on create", async () => {
     api.post.mockResolvedValue(ok({ id: "c1", credential: "umec_x" }));
 
-    await createConnector({ workspace_id: "w1", name: "cli", connector_type: "mcp" });
+    await createConnector({
+      workspace_id: "w1",
+      name: "cli",
+      connector_type: "mcp",
+    });
 
     expect(api.post.mock.calls[0][0]).toBe("/api/ume/v1/connectors");
   });
