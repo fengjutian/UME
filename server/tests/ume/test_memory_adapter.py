@@ -111,6 +111,103 @@ class FakeSdk:
         return [{"id": kwargs["memory_id"], "new_memory": "old", "event": "UPDATE"}]
 
 
+ENTITY_ID_KEYS = ("user_id", "agent_id", "run_id")
+
+
+class GuardedSdk(FakeSdk):
+    """A fake that enforces the SDK's own precondition.
+
+    `ume.Memory.add` and `ume.Memory.search` both refuse to run without at least
+    one of user_id / agent_id / run_id — `add` raises
+    `ValidationError("At least one of 'user_id', 'agent_id', or 'run_id' must be
+    provided.")`, `search` raises `ValueError("filters must contain at least one
+    of: user_id, agent_id, run_id")`. `FakeSdk` above accepted anything, which is
+    how 348 passing tests coexisted with every real write and every real search
+    returning 500.
+
+    Reproducing the guard here is the point: a fake that is more permissive than
+    the thing it stands in for cannot fail on the bug it was written to catch.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.seen_filters = {}
+        self.entity_ids_seen = []
+
+    @staticmethod
+    def _require_entity_id(filters):
+        if not any(filters.get(key) for key in ENTITY_ID_KEYS):
+            raise ValueError("filters must contain at least one of: user_id, agent_id, run_id")
+
+    def add(self, **kwargs):
+        # `add` takes the entity ids as keyword arguments, not inside metadata.
+        provided = {key: kwargs.get(key) for key in ENTITY_ID_KEYS}
+        if not any(provided.values()):
+            raise ValueError("At least one of 'user_id', 'agent_id', or 'run_id' must be provided.")
+        self.entity_ids_seen.append(provided)
+        return super().add(**kwargs)
+
+    def search(self, **kwargs):
+        filters = kwargs.get("filters") or {}
+        self.seen_filters = filters
+        self._require_entity_id(filters)
+        self.entity_ids_seen.append({key: filters.get(key) for key in ENTITY_ID_KEYS})
+        return super().search(**kwargs)
+
+
+class TestSdkEntityIdContract:
+    """The adapter is UME's only boundary with the SDK, so it owns this mapping."""
+
+    def test_add_passes_an_entity_id_the_sdk_accepts(self):
+        sdk = GuardedSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        adapter.add(
+            [{"role": "user", "content": "hi"}],
+            scope=EngineScope(workspace_id=uuid.uuid4()),
+        )
+
+    def test_search_passes_an_entity_id_the_sdk_accepts(self):
+        sdk = GuardedSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        adapter.search("query", scope=EngineScope(workspace_id=uuid.uuid4()))
+
+    def test_the_entity_id_is_derived_from_the_workspace(self):
+        """Two workspaces must not be able to read each other's engine memories."""
+        sdk = GuardedSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        first = EngineScope(workspace_id=uuid.uuid4())
+        second = EngineScope(workspace_id=uuid.uuid4())
+
+        adapter.search("query", scope=first)
+        adapter.search("query", scope=second)
+
+        assert [ids[ENTITY_ID_KEYS[0]] for ids in sdk.entity_ids_seen] == [
+            first.as_entity_id()[ENTITY_ID_KEYS[0]],
+            second.as_entity_id()[ENTITY_ID_KEYS[0]],
+        ]
+
+    def test_a_caller_cannot_forge_the_entity_id(self):
+        """The scope owns the tenant id; caller filters may not override it."""
+        sdk = GuardedSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        scope = EngineScope(workspace_id=uuid.uuid4())
+
+        adapter.search("query", scope=scope, filters={ENTITY_ID_KEYS[0]: "someone-elses"})
+
+        assert sdk.seen_filters[ENTITY_ID_KEYS[0]] == str(scope.workspace_id)
+
+    def test_the_workspace_metadata_is_still_forwarded(self):
+        """The entity id is an addition, not a replacement for the UME metadata."""
+        sdk = GuardedSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        scope = EngineScope(workspace_id=uuid.uuid4(), project_ids=(uuid.uuid4(),))
+
+        adapter.search("query", scope=scope)
+
+        assert sdk.seen_filters["ume_workspace_id"] == str(scope.workspace_id)
+        assert sdk.seen_filters["ume_project_ids"] == [str(pid) for pid in scope.project_ids]
+
+
 class TestSdkAdapter:
     def test_add_forwards_the_scope_as_metadata(self):
         sdk = FakeSdk()
@@ -131,9 +228,27 @@ class TestSdkAdapter:
         sdk = FakeSdk()
         adapter = SdkMemoryAdapter(lambda: sdk)
         scope = EngineScope(workspace_id=uuid.uuid4())
-        adapter.search("query", scope=scope, filters={"user_id": "alice"})
-        assert sdk.kwargs["filters"]["user_id"] == "alice"
+        adapter.search("query", scope=scope, filters={"memory_type": "semantic"})
+        assert sdk.kwargs["filters"]["memory_type"] == "semantic"
         assert sdk.kwargs["filters"]["ume_workspace_id"] == str(scope.workspace_id)
+
+    def test_a_caller_cannot_override_the_tenant_id(self):
+        """Contract change: the workspace now *is* the SDK tenant id.
+
+        The previous version merged a caller-supplied `user_id` and asserted
+        `"alice"` survived. `user_id` is now the key the engine isolates on, so a
+        caller that could set it would point the search at a tenant other than
+        the one membership was resolved for — exactly the "another tenant's
+        candidates influence the ranking" failure the surrounding comment warns
+        about. No production caller passes `filters` today
+        (`services/memories.py:499` is the only one, without it), so nothing that
+        ships depends on the old behaviour.
+        """
+        sdk = FakeSdk()
+        adapter = SdkMemoryAdapter(lambda: sdk)
+        scope = EngineScope(workspace_id=uuid.uuid4())
+        adapter.search("query", scope=scope, filters={"user_id": "alice"})
+        assert sdk.kwargs["filters"]["user_id"] == str(scope.workspace_id)
 
     def test_a_caller_cannot_forge_the_workspace_filter(self):
         """A caller-supplied `ume_workspace_id` must be overwritten, not merged."""

@@ -76,7 +76,9 @@ export function MainNav({
                     title: "Memories",
                     url: "/dashboard/memories",
                     icon: GalleryVerticalEnd,
-                    active: pathname === "/dashboard/memories",
+                    active:
+                      pathname === "/dashboard/memories" ||
+                      pathname.startsWith("/dashboard/memories/"),
                   },
                   {
                     title: "Entities",

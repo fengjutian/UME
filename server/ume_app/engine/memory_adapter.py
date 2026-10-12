@@ -38,6 +38,23 @@ class EngineScope:
             metadata["ume_memory_record_id"] = str(self.memory_record_id)
         return metadata
 
+    def as_entity_id(self) -> dict[str, str]:
+        """The SDK's own tenant id for this scope.
+
+        `ume.Memory.add` and `ume.Memory.search` both refuse to run without one
+        of user_id / agent_id / run_id — they are keyword arguments for `add` and
+        filter keys for `search`, neither of which reads UME metadata. Passing
+        only `ume_workspace_id` therefore raised on every real write and every
+        real search.
+
+        The workspace is the SDK's tenant unit: `user_id` here is the workspace,
+        so the engine's own isolation matches UME's instead of having to be
+        re-checked afterwards. The UME metadata keys stay alongside it for
+        `EngineScope.as_metadata` consumers and the belt-and-braces check in
+        `SdkMemoryAdapter.get`.
+        """
+        return {"user_id": str(self.workspace_id)}
+
 
 @dataclass(frozen=True)
 class EngineMemory:
@@ -148,7 +165,12 @@ class SdkMemoryAdapter:
         metadata: dict[str, Any] | None = None,
         infer: bool = True,
     ) -> list[EngineMemory]:
-        result = self._factory().add(messages=messages, metadata=self._metadata(scope, metadata), infer=infer)
+        result = self._factory().add(
+            messages=messages,
+            metadata=self._metadata(scope, metadata),
+            infer=infer,
+            **scope.as_entity_id(),
+        )
         return [_normalise_memory(item) for item in _iter_results(result)]
 
     def search(
@@ -161,8 +183,13 @@ class SdkMemoryAdapter:
     ) -> list[EngineMemory]:
         # The workspace filter goes *into* the query. Filtering afterwards would
         # let another tenant's candidates influence the ranking.
+        #
+        # The scope is applied last so a caller-supplied `user_id` cannot point
+        # the engine at a different tenant than the one membership was resolved
+        # for.
         engine_filters = dict(filters or {})
         engine_filters.update(self._metadata(scope))
+        engine_filters.update(scope.as_entity_id())
         results = self._factory().search(query=query, filters=engine_filters, top_k=limit)
         return [_normalise_memory(item, score=_score_of(item)) for item in _iter_results(results)]
 
