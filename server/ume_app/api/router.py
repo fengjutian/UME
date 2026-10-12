@@ -1,6 +1,6 @@
 """UME API v1 router table."""
 
-from ume_app.api.routes import conversations, memories, projects, workspaces
+from ume_app.api.routes import conversations, graph, memories, projects, workspaces
 
 API_PREFIX = "/api/ume/v1"
 
@@ -13,7 +13,8 @@ def build_router():
     router.include_router(projects.router)
     router.include_router(conversations.router)
     router.include_router(memories.router)
+    router.include_router(graph.router)
     return router
 
 
-__all__ = ["API_PREFIX", "build_router", "conversations", "memories", "projects", "workspaces"]
+__all__ = ["API_PREFIX", "build_router", "conversations", "graph", "memories", "projects", "workspaces"]

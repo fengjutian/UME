@@ -97,7 +97,12 @@ def upstream_error() -> UpstreamError:
     exc = sys.exc_info()[1]
     code, message = _classify(exc)
     rid = request_id_var.get()
-    logging.exception("Upstream provider error (code=%s)", code)
+    if _STATUS_BY_CODE.get(code, 502) < 500:
+        # A caller mistake, not an incident. Logging a full traceback at ERROR
+        # for every malformed id trains operators to ignore the log.
+        logging.warning("Rejected malformed request (code=%s)", code)
+    else:
+        logging.exception("Upstream provider error (code=%s)", code)
     return UpstreamError(code=code, detail=message, request_id=rid)
 
 

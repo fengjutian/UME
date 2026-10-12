@@ -156,3 +156,22 @@ WORKSPACE_ROLE_RANK = {
     WorkspaceRole.ADMIN: 2,
     WorkspaceRole.OWNER: 3,
 }
+
+
+class EdgeStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class RelationType(StrEnum):
+    """The relation vocabulary the graph API accepts.
+
+    Kept closed on purpose: an open string field turns the graph into an
+    unqueryable pile of one-off labels.
+    """
+
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    SUPERSEDES = "supersedes"
+    DERIVED_FROM = "derived_from"
+    RELATED_TO = "related_to"

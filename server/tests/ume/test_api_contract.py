@@ -52,6 +52,13 @@ EXPECTED_ROUTES = {
     ("GET", "/memories/{memory_id}/sources"),
     ("GET", "/memories/{memory_id}/versions"),
     ("POST", "/memory-search"),
+    ("GET", "/graph"),
+    ("GET", "/graph/nodes/{node_id}/neighbors"),
+    ("POST", "/graph/edges"),
+    ("PATCH", "/graph/edges/{edge_id}"),
+    ("DELETE", "/graph/edges/{edge_id}"),
+    ("GET", "/timeline"),
+    ("POST", "/context"),
 }
 
 

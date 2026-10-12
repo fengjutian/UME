@@ -25,7 +25,12 @@ def current_request_id() -> str:
 
 
 def success(data: Any, *, status_code: int = 200) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"data": data, "request_id": current_request_id()})
+    # Encoded centrally so a route can hand over datetimes, UUIDs and Decimals
+    # without remembering to convert them; JSONResponse does not.
+    return JSONResponse(
+        status_code=status_code,
+        content={"data": jsonable_encoder(data), "request_id": current_request_id()},
+    )
 
 
 def created(data: Any) -> JSONResponse:

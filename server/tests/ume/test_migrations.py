@@ -94,7 +94,7 @@ class TestRevisionChain:
 
     def test_chain_has_a_single_head(self, in_server_dir):
         script = ScriptDirectory.from_config(_config())
-        assert script.get_heads() == ["011"]
+        assert script.get_heads() == ["012"]
 
     def test_the_chain_is_linear_with_no_branches(self, in_server_dir):
         """Every UME migration extends the previous one.
@@ -272,6 +272,36 @@ class TestOfflineImportDDL:
         keys = ddl.split("CREATE TABLE ume_idempotency_keys")[1].split(");")[0]
         assert "request_hash VARCHAR(64) NOT NULL" in keys
         assert "expires_at TIMESTAMP WITH TIME ZONE NOT NULL" in keys
+
+    def test_is_additive(self, ddl):
+        assert "ALTER TABLE" not in ddl
+        assert "DROP TABLE" not in ddl
+
+
+class TestOfflineEdgeDDL:
+    @pytest.fixture
+    def ddl(self, in_server_dir):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            command.upgrade(_config(), "011:012", sql=True)
+        return buffer.getvalue()
+
+    def test_creates_the_edge_table(self, ddl):
+        assert "CREATE TABLE ume_memory_edges" in ddl
+
+    def test_self_loops_are_rejected(self, ddl):
+        assert "CONSTRAINT ck_ume_memory_edges_no_self_loop CHECK (source_memory_id <> target_memory_id)" in ddl
+
+    def test_pair_uniqueness_is_ordered_agnostic(self, ddl):
+        """(a,b) and (b,a) are the same relation, so the index sorts the pair."""
+        assert "CREATE UNIQUE INDEX uq_ume_memory_edges_pair" in ddl
+        assert "least(source_memory_id, target_memory_id)" in ddl
+        assert "greatest(source_memory_id, target_memory_id)" in ddl
+        assert "WHERE status = 'active'" in ddl
+
+    def test_lookup_indexes(self, ddl):
+        assert "CREATE INDEX ix_ume_memory_edges_source" in ddl
+        assert "CREATE INDEX ix_ume_memory_edges_target" in ddl
 
     def test_is_additive(self, ddl):
         assert "ALTER TABLE" not in ddl
